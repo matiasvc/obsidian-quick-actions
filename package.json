@@ -1,0 +1,19 @@
+{
+	"name": "obsidian-quick-actions",
+	"version": "1.0.0",
+	"description": "Configurable quick actions for common vault operations",
+	"main": "main.js",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "node esbuild.config.mjs production"
+	},
+	"keywords": [],
+	"author": "Matias Varnum",
+	"license": "MIT",
+	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"esbuild": "^0.24.0",
+		"obsidian": "latest",
+		"typescript": "^5.7.0"
+	}
+}
