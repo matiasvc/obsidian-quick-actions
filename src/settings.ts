@@ -71,8 +71,6 @@ export class QuickActionsSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "Quick Actions" });
-
 		// Models
 		new Setting(containerEl).setHeading().setName("Models").addButton((btn) =>
 			btn.setButtonText("+ Add Model").onClick(() => {
@@ -217,7 +215,7 @@ class ModelEditModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl("h2", { text: "Edit Model" });
+		new Setting(contentEl).setHeading().setName("Edit Model");
 
 		new Setting(contentEl).setName("Name").addText((t) =>
 			t.setPlaceholder("e.g. Sonnet, Haiku, GPT-4o")
@@ -292,7 +290,7 @@ class ActionEditModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		contentEl.createEl("h2", { text: "Edit Action" });
+		new Setting(contentEl).setHeading().setName("Edit Action");
 
 		// Action name
 		new Setting(contentEl).setName("Name").addText((text) =>
