@@ -36,7 +36,7 @@ export default class QuickActionsPlugin extends Plugin {
 			this.addCommand({
 				id: commandId,
 				name: action.name,
-				callback: () => executeAction(this.app, action),
+				callback: () => executeAction(this.app, action, this.settings.llm),
 			});
 			this.registeredCommandIds.push(commandId);
 		}

@@ -1,6 +1,6 @@
-import { App, Notice, TFile } from "obsidian";
-import { Action, Step } from "./types";
-import { openPromptModal, openFilePickerModal } from "./modals";
+import { App, Notice, TFile, requestUrl } from "obsidian";
+import { Action, Step, LLMSettings } from "./types";
+import { openPromptModal, openFilePickerModal, openChoiceModal } from "./modals";
 
 declare const window: Window & { moment: typeof import("moment") };
 
@@ -25,20 +25,20 @@ function getBuiltinVars(): Record<string, string> {
 	};
 }
 
-export async function executeAction(app: App, action: Action): Promise<void> {
+export async function executeAction(app: App, action: Action, llmSettings: LLMSettings): Promise<void> {
 	const vars = getBuiltinVars();
 
 	for (const step of action.steps) {
-		const cancelled = await executeStep(app, step, vars);
+		const cancelled = await executeStep(app, step, vars, llmSettings);
 		if (cancelled) return;
 	}
 }
 
 // Returns true if the action should be cancelled
-async function executeStep(app: App, step: Step, vars: Record<string, string>): Promise<boolean> {
+async function executeStep(app: App, step: Step, vars: Record<string, string>, llmSettings: LLMSettings): Promise<boolean> {
 	switch (step.type) {
 		case "prompt": {
-			const result = await openPromptModal(app, step.label);
+			const result = await openPromptModal(app, step.label, step.multiline);
 			if (result === null) return true;
 			vars[step.variable] = result;
 			return false;
@@ -83,6 +83,54 @@ async function executeStep(app: App, step: Step, vars: Record<string, string>): 
 			}
 			await app.vault.create(path, content);
 			new Notice(`Created ${path}`);
+			return false;
+		}
+		case "choice": {
+			const result = await openChoiceModal(app, step.label, step.options);
+			if (result === null) return true;
+			vars[step.variable] = result;
+			return false;
+		}
+		case "open_file": {
+			const target = ensureExtension(resolveTemplate(step.target, vars));
+			const file = app.vault.getAbstractFileByPath(target);
+			if (!file || !(file instanceof TFile)) {
+				new Notice(`File not found: ${target}`);
+				return false;
+			}
+			const leaf = app.workspace.getLeaf(false);
+			await leaf.openFile(file as TFile);
+
+			if (step.section) {
+				const section = resolveTemplate(step.section, vars);
+				const headingText = section.replace(/^#+\s*/, "");
+				const cache = app.metadataCache.getFileCache(file as TFile);
+				const heading = cache?.headings?.find((h) => h.heading === headingText);
+				if (heading) {
+					const view = leaf.view as any;
+					view?.currentMode?.applyScroll?.(heading.position.start.line);
+				}
+			}
+			return false;
+		}
+		case "llm": {
+			const systemPrompt = resolveTemplate(step.system_prompt, vars);
+			const userPrompt = resolveTemplate(step.user_prompt, vars);
+
+			const apiKey = await app.secretStorage.getSecret(llmSettings.secret_id);
+			if (!apiKey) {
+				new Notice("LLM API key not configured. Set it in Quick Actions settings.");
+				return true;
+			}
+
+			const notice = new Notice(`Generating ${step.variable}...`, 0);
+			const result = await callLLM(llmSettings.provider, llmSettings.model, apiKey, systemPrompt, userPrompt);
+			notice.hide();
+			if (result === null) {
+				new Notice("LLM request failed");
+				return true;
+			}
+			vars[step.variable] = result;
 			return false;
 		}
 	}
@@ -170,4 +218,54 @@ async function insertInSection(
 	lines.splice(insertIndex, 0, text);
 	await app.vault.modify(file, lines.join("\n"));
 	new Notice(`Updated ${file.basename}`);
+}
+
+async function callLLM(
+	provider: "openai" | "anthropic",
+	model: string,
+	apiKey: string,
+	systemPrompt: string,
+	userPrompt: string,
+): Promise<string | null> {
+	try {
+		if (provider === "openai") {
+			const resp = await requestUrl({
+				url: "https://api.openai.com/v1/chat/completions",
+				method: "POST",
+				headers: {
+					"Authorization": `Bearer ${apiKey}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					model,
+					messages: [
+						...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+						{ role: "user", content: userPrompt },
+					],
+				}),
+			});
+			return resp.json.choices[0].message.content;
+		} else {
+			const resp = await requestUrl({
+				url: "https://api.anthropic.com/v1/messages",
+				method: "POST",
+				headers: {
+					"x-api-key": apiKey,
+					"anthropic-version": "2023-06-01",
+					"content-type": "application/json",
+					"anthropic-dangerous-direct-browser-access": "true",
+				},
+				body: JSON.stringify({
+					model,
+					max_tokens: 4096,
+					...(systemPrompt ? { system: systemPrompt } : {}),
+					messages: [{ role: "user", content: userPrompt }],
+				}),
+			});
+			return resp.json.content[0].text;
+		}
+	} catch (e) {
+		console.error("Quick Actions LLM error:", e);
+		return null;
+	}
 }

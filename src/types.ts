@@ -4,6 +4,7 @@ export interface PromptStep {
 	type: "prompt";
 	variable: string;
 	label: string;
+	multiline: boolean;
 }
 
 export interface FilePickerStep {
@@ -33,7 +34,27 @@ export interface CreateFileStep {
 	content: string;
 }
 
-export type Step = PromptStep | FilePickerStep | TasksModalStep | InsertInSectionStep | CreateFileStep;
+export interface ChoiceStep {
+	type: "choice";
+	variable: string;
+	label: string;
+	options: string[];
+}
+
+export interface OpenFileStep {
+	type: "open_file";
+	target: string;
+	section: string;
+}
+
+export interface LLMStep {
+	type: "llm";
+	variable: string;
+	system_prompt: string;
+	user_prompt: string;
+}
+
+export type Step = PromptStep | FilePickerStep | TasksModalStep | InsertInSectionStep | CreateFileStep | ChoiceStep | OpenFileStep | LLMStep;
 
 export type StepType = Step["type"];
 
@@ -43,6 +64,9 @@ export const STEP_TYPE_LABELS: Record<StepType, string> = {
 	tasks_modal: "Tasks Modal",
 	insert_in_section: "Insert in Section",
 	create_file: "Create File",
+	choice: "Choice",
+	open_file: "Open File",
+	llm: "LLM",
 };
 
 export interface Action {
@@ -51,14 +75,21 @@ export interface Action {
 	steps: Step[];
 }
 
+export interface LLMSettings {
+	provider: "openai" | "anthropic";
+	model: string;
+	secret_id: string;
+}
+
 export interface QuickActionsSettings {
 	actions: Action[];
+	llm: LLMSettings;
 }
 
 // Factory functions for default steps
 
 export function defaultPromptStep(): PromptStep {
-	return { type: "prompt", variable: "input", label: "Input:" };
+	return { type: "prompt", variable: "input", label: "Input:", multiline: false };
 }
 
 export function defaultFilePickerStep(): FilePickerStep {
@@ -85,6 +116,18 @@ export function defaultCreateFileStep(): CreateFileStep {
 	return { type: "create_file", path: "", content: "" };
 }
 
+export function defaultChoiceStep(): ChoiceStep {
+	return { type: "choice", variable: "choice", label: "Choose:", options: [] };
+}
+
+export function defaultOpenFileStep(): OpenFileStep {
+	return { type: "open_file", target: "", section: "" };
+}
+
+export function defaultLLMStep(): LLMStep {
+	return { type: "llm", variable: "llm_response", system_prompt: "", user_prompt: "" };
+}
+
 export function defaultStepForType(type: StepType): Step {
 	switch (type) {
 		case "prompt": return defaultPromptStep();
@@ -92,6 +135,9 @@ export function defaultStepForType(type: StepType): Step {
 		case "tasks_modal": return defaultTasksModalStep();
 		case "insert_in_section": return defaultInsertInSectionStep();
 		case "create_file": return defaultCreateFileStep();
+		case "choice": return defaultChoiceStep();
+		case "open_file": return defaultOpenFileStep();
+		case "llm": return defaultLLMStep();
 	}
 }
 
@@ -101,4 +147,5 @@ export function generateId(): string {
 
 export const DEFAULT_SETTINGS: QuickActionsSettings = {
 	actions: [],
+	llm: { provider: "anthropic", model: "claude-sonnet-4-6", secret_id: "" },
 };

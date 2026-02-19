@@ -2,7 +2,7 @@
 	"id": "obsidian-quick-actions",
 	"name": "Quick Actions",
 	"version": "1.0.0",
-	"minAppVersion": "1.0.0",
+	"minAppVersion": "1.11.4",
 	"description": "Configurable quick actions for common vault operations. Build custom commands from composable steps.",
 	"author": "Matias Varnum",
 	"isDesktopOnly": false

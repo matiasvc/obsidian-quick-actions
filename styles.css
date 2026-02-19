@@ -14,3 +14,22 @@
 	margin-top: 8px;
 	padding: 6px 8px;
 }
+
+.quick-actions-prompt-textarea {
+	width: 100%;
+	margin-top: 8px;
+	padding: 6px 8px;
+	resize: vertical;
+}
+
+.quick-actions-step textarea {
+	width: 100%;
+	min-height: 10em;
+	resize: vertical;
+}
+
+.quick-actions-prompt-footer {
+	margin-top: 8px;
+	display: flex;
+	justify-content: flex-end;
+}

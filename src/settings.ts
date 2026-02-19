@@ -72,6 +72,50 @@ export class QuickActionsSettingTab extends PluginSettingTab {
 
 		containerEl.createEl("h2", { text: "Quick Actions" });
 
+		// LLM Configuration
+		containerEl.createEl("h3", { text: "LLM Configuration" });
+
+		const llm = this.plugin.settings.llm;
+
+		new Setting(containerEl)
+			.setName("Provider")
+			.addDropdown((d) =>
+				d.addOption("anthropic", "Anthropic")
+					.addOption("openai", "OpenAI")
+					.setValue(llm.provider)
+					.onChange(async (v) => {
+						llm.provider = v as "openai" | "anthropic";
+						if (v === "anthropic" && !llm.model) llm.model = "claude-sonnet-4-6";
+						if (v === "openai" && !llm.model) llm.model = "gpt-4o";
+						await this.plugin.saveSettings();
+						this.display();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Model")
+			.addText((t) =>
+				t.setValue(llm.model).onChange(async (v) => {
+					llm.model = v;
+					await this.plugin.saveSettings();
+				}),
+			);
+
+		new Setting(containerEl)
+			.setName("API Key Secret ID")
+			.setDesc("Store your API key in Settings > Keychain, then enter the secret ID here.")
+			.addText((t) =>
+				t.setPlaceholder("e.g. openai-api-key")
+					.setValue(llm.secret_id)
+					.onChange(async (v) => {
+						llm.secret_id = v;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		// Actions
+		containerEl.createEl("h3", { text: "Actions" });
+
 		new Setting(containerEl).addButton((btn) =>
 			btn.setButtonText("+ New Action").onClick(() => {
 				const action: Action = {
@@ -113,24 +157,32 @@ export class QuickActionsSettingTab extends PluginSettingTab {
 					this.display();
 				}),
 			);
-			if (i > 0) {
-				setting.addButton((btn) =>
-					btn.setButtonText("\u2191").setTooltip("Move Up").onClick(async () => {
+			setting.addButton((btn) => {
+				btn.setButtonText("\u2191").setTooltip("Move Up");
+				if (i > 0) {
+					btn.onClick(async () => {
 						[actions[i - 1], actions[i]] = [actions[i], actions[i - 1]];
 						await this.plugin.saveSettings();
 						this.display();
-					}),
-				);
-			}
-			if (i < actions.length - 1) {
-				setting.addButton((btn) =>
-					btn.setButtonText("\u2193").setTooltip("Move Down").onClick(async () => {
+					});
+				} else {
+					btn.setDisabled(true);
+					btn.buttonEl.style.visibility = "hidden";
+				}
+			});
+			setting.addButton((btn) => {
+				btn.setButtonText("\u2193").setTooltip("Move Down");
+				if (i < actions.length - 1) {
+					btn.onClick(async () => {
 						[actions[i], actions[i + 1]] = [actions[i + 1], actions[i]];
 						await this.plugin.saveSettings();
 						this.display();
-					}),
-				);
-			}
+					});
+				} else {
+					btn.setDisabled(true);
+					btn.buttonEl.style.visibility = "hidden";
+				}
+			});
 		}
 	}
 
@@ -220,7 +272,7 @@ class ActionEditModal extends Modal {
 		const header = new Setting(stepEl).setName(`Step ${index + 1}`);
 
 		header.addDropdown((dropdown) => {
-			const types: StepType[] = ["prompt", "file_picker", "tasks_modal", "insert_in_section", "create_file"];
+			const types: StepType[] = ["prompt", "file_picker", "tasks_modal", "insert_in_section", "create_file", "choice", "open_file", "llm"];
 			for (const t of types) {
 				dropdown.addOption(t, STEP_TYPE_LABELS[t]);
 			}
@@ -270,6 +322,9 @@ class ActionEditModal extends Modal {
 				);
 				new Setting(container).setName("Variable name").addText((t) =>
 					t.setValue(step.variable).onChange((v) => { step.variable = v; }),
+				);
+				new Setting(container).setName("Multi-line").addToggle((t) =>
+					t.setValue(step.multiline).onChange((v) => { step.multiline = v; }),
 				);
 				break;
 			}
@@ -334,6 +389,49 @@ class ActionEditModal extends Modal {
 					t.setPlaceholder("File content with {{variables}}")
 						.setValue(step.content)
 						.onChange((v) => { step.content = v; }),
+				);
+				break;
+			}
+			case "choice": {
+				new Setting(container).setName("Label").addText((t) =>
+					t.setValue(step.label).onChange((v) => { step.label = v; }),
+				);
+				new Setting(container).setName("Variable name").addText((t) =>
+					t.setValue(step.variable).onChange((v) => { step.variable = v; }),
+				);
+				new Setting(container).setName("Options (one per line)").addTextArea((t) =>
+					t.setValue(step.options.join("\n")).onChange((v) => {
+						step.options = v.split("\n").filter((line) => line.trim() !== "");
+					}),
+				);
+				break;
+			}
+			case "open_file": {
+				new Setting(container).setName("Target file path").addText((t) =>
+					t.setPlaceholder("e.g. {{file}} or Journal/Daily/D-{{date}}.md")
+						.setValue(step.target)
+						.onChange((v) => { step.target = v; }),
+				);
+				new Setting(container).setName("Section (optional)").addText((t) =>
+					t.setPlaceholder("e.g. ## Log")
+						.setValue(step.section)
+						.onChange((v) => { step.section = v; }),
+				);
+				break;
+			}
+			case "llm": {
+				new Setting(container).setName("Variable name").addText((t) =>
+					t.setValue(step.variable).onChange((v) => { step.variable = v; }),
+				);
+				new Setting(container).setName("System prompt").addTextArea((t) =>
+					t.setPlaceholder("System prompt with {{variables}}")
+						.setValue(step.system_prompt)
+						.onChange((v) => { step.system_prompt = v; }),
+				);
+				new Setting(container).setName("User prompt").addTextArea((t) =>
+					t.setPlaceholder("User prompt with {{variables}}")
+						.setValue(step.user_prompt)
+						.onChange((v) => { step.user_prompt = v; }),
 				);
 				break;
 			}
