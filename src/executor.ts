@@ -1,5 +1,5 @@
 import { App, Notice, TFile, requestUrl } from "obsidian";
-import { Action, Step, LLMSettings } from "./types";
+import { Action, Step, ModelConfig } from "./types";
 import { openPromptModal, openFilePickerModal, openChoiceModal } from "./modals";
 
 declare const window: Window & { moment: typeof import("moment") };
@@ -16,6 +16,13 @@ export function resolveTemplate(template: string, vars: Record<string, string>):
 	});
 }
 
+function resolvePathTemplate(template: string, vars: Record<string, string>): string {
+	return template.replace(/\{\{(\w+)\}\}/g, (match, name) => {
+		if (vars[name] === undefined) return match;
+		return vars[name].replace(/[/\\]/g, "-");
+	});
+}
+
 function getBuiltinVars(): Record<string, string> {
 	const now = window.moment();
 	return {
@@ -25,17 +32,22 @@ function getBuiltinVars(): Record<string, string> {
 	};
 }
 
-export async function executeAction(app: App, action: Action, llmSettings: LLMSettings): Promise<void> {
-	const vars = getBuiltinVars();
+export async function executeAction(app: App, action: Action, models: ModelConfig[]): Promise<void> {
+	try {
+		const vars = getBuiltinVars();
 
-	for (const step of action.steps) {
-		const cancelled = await executeStep(app, step, vars, llmSettings);
-		if (cancelled) return;
+		for (const step of action.steps) {
+			const cancelled = await executeStep(app, step, vars, models);
+			if (cancelled) return;
+		}
+	} catch (e) {
+		console.error(`Quick Actions "${action.name}" failed:`, e);
+		new Notice(`Action "${action.name}" failed: ${e}`);
 	}
 }
 
 // Returns true if the action should be cancelled
-async function executeStep(app: App, step: Step, vars: Record<string, string>, llmSettings: LLMSettings): Promise<boolean> {
+async function executeStep(app: App, step: Step, vars: Record<string, string>, models: ModelConfig[]): Promise<boolean> {
 	switch (step.type) {
 		case "prompt": {
 			const result = await openPromptModal(app, step.label, step.multiline);
@@ -65,15 +77,15 @@ async function executeStep(app: App, step: Step, vars: Record<string, string>, l
 			return false;
 		}
 		case "insert_in_section": {
-			const target = resolveTemplate(step.target, vars);
+			const target = resolvePathTemplate(step.target, vars);
 			const section = resolveTemplate(step.section, vars);
 			const text = resolveTemplate(step.format, vars);
-			const templatePath = resolveTemplate(step.templatePath, vars);
+			const templatePath = resolvePathTemplate(step.templatePath, vars);
 			await insertInSection(app, target, section, step.position, text, step.createIfMissing, templatePath);
 			return false;
 		}
 		case "create_file": {
-			let path = resolveTemplate(step.path, vars);
+			let path = resolvePathTemplate(step.path, vars);
 			path = ensureExtension(path);
 			const content = resolveTemplate(step.content, vars);
 			const existing = app.vault.getAbstractFileByPath(path);
@@ -92,7 +104,7 @@ async function executeStep(app: App, step: Step, vars: Record<string, string>, l
 			return false;
 		}
 		case "open_file": {
-			const target = ensureExtension(resolveTemplate(step.target, vars));
+			const target = ensureExtension(resolvePathTemplate(step.target, vars));
 			const file = app.vault.getAbstractFileByPath(target);
 			if (!file || !(file instanceof TFile)) {
 				new Notice(`File not found: ${target}`);
@@ -114,17 +126,25 @@ async function executeStep(app: App, step: Step, vars: Record<string, string>, l
 			return false;
 		}
 		case "llm": {
+			const config = step.model
+				? models.find(m => m.name === step.model)
+				: models[0];
+			if (!config) {
+				new Notice(`LLM model "${step.model || "(none)"}" not configured.`);
+				return true;
+			}
+
 			const systemPrompt = resolveTemplate(step.system_prompt, vars);
 			const userPrompt = resolveTemplate(step.user_prompt, vars);
 
-			const apiKey = await app.secretStorage.getSecret(llmSettings.secret_id);
+			const apiKey = await app.secretStorage.getSecret(config.secret_id);
 			if (!apiKey) {
 				new Notice("LLM API key not configured. Set it in Quick Actions settings.");
 				return true;
 			}
 
 			const notice = new Notice(`Generating ${step.variable}...`, 0);
-			const result = await callLLM(llmSettings.provider, llmSettings.model, apiKey, systemPrompt, userPrompt);
+			const result = await callLLM(config.provider, config.model, apiKey, systemPrompt, userPrompt);
 			notice.hide();
 			if (result === null) {
 				new Notice("LLM request failed");

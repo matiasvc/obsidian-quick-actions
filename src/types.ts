@@ -52,6 +52,7 @@ export interface LLMStep {
 	variable: string;
 	system_prompt: string;
 	user_prompt: string;
+	model: string;
 }
 
 export type Step = PromptStep | FilePickerStep | TasksModalStep | InsertInSectionStep | CreateFileStep | ChoiceStep | OpenFileStep | LLMStep;
@@ -75,7 +76,8 @@ export interface Action {
 	steps: Step[];
 }
 
-export interface LLMSettings {
+export interface ModelConfig {
+	name: string;
 	provider: "openai" | "anthropic";
 	model: string;
 	secret_id: string;
@@ -83,7 +85,7 @@ export interface LLMSettings {
 
 export interface QuickActionsSettings {
 	actions: Action[];
-	llm: LLMSettings;
+	models: ModelConfig[];
 }
 
 // Factory functions for default steps
@@ -125,7 +127,7 @@ export function defaultOpenFileStep(): OpenFileStep {
 }
 
 export function defaultLLMStep(): LLMStep {
-	return { type: "llm", variable: "llm_response", system_prompt: "", user_prompt: "" };
+	return { type: "llm", variable: "llm_response", system_prompt: "", user_prompt: "", model: "" };
 }
 
 export function defaultStepForType(type: StepType): Step {
@@ -147,5 +149,5 @@ export function generateId(): string {
 
 export const DEFAULT_SETTINGS: QuickActionsSettings = {
 	actions: [],
-	llm: { provider: "anthropic", model: "claude-sonnet-4-6", secret_id: "" },
+	models: [],
 };

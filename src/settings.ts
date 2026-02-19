@@ -1,6 +1,7 @@
 import { AbstractInputSuggest, App, Modal, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
 import {
 	Action,
+	ModelConfig,
 	Step,
 	StepType,
 	STEP_TYPE_LABELS,
@@ -72,46 +73,49 @@ export class QuickActionsSettingTab extends PluginSettingTab {
 
 		containerEl.createEl("h2", { text: "Quick Actions" });
 
-		// LLM Configuration
-		containerEl.createEl("h3", { text: "LLM Configuration" });
+		// Models
+		containerEl.createEl("h3", { text: "Models" });
 
-		const llm = this.plugin.settings.llm;
+		new Setting(containerEl).addButton((btn) =>
+			btn.setButtonText("+ Add Model").onClick(() => {
+				const model: ModelConfig = {
+					name: "New Model",
+					provider: "anthropic",
+					model: "",
+					secret_id: "",
+				};
+				this.plugin.settings.models.push(model);
+				new ModelEditModal(this.app, this.plugin, model, () => this.display()).open();
+			}),
+		);
 
-		new Setting(containerEl)
-			.setName("Provider")
-			.addDropdown((d) =>
-				d.addOption("anthropic", "Anthropic")
-					.addOption("openai", "OpenAI")
-					.setValue(llm.provider)
-					.onChange(async (v) => {
-						llm.provider = v as "openai" | "anthropic";
-						if (v === "anthropic" && !llm.model) llm.model = "claude-sonnet-4-6";
-						if (v === "openai" && !llm.model) llm.model = "gpt-4o";
+		const models = this.plugin.settings.models;
+		for (let i = 0; i < models.length; i++) {
+			const model = models[i];
+			new Setting(containerEl)
+				.setName(model.name || "(unnamed)")
+				.setDesc(`${model.provider} / ${model.model || "(no model ID)"}`)
+				.addButton((btn) =>
+					btn.setButtonText("Edit").onClick(() => {
+						new ModelEditModal(this.app, this.plugin, model, () => this.display()).open();
+					}),
+				)
+				.addButton((btn) =>
+					btn.setButtonText("Duplicate").onClick(async () => {
+						const copy: ModelConfig = { ...model, name: model.name + " (copy)" };
+						models.splice(i + 1, 0, copy);
 						await this.plugin.saveSettings();
 						this.display();
 					}),
-			);
-
-		new Setting(containerEl)
-			.setName("Model")
-			.addText((t) =>
-				t.setValue(llm.model).onChange(async (v) => {
-					llm.model = v;
-					await this.plugin.saveSettings();
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName("API Key Secret ID")
-			.setDesc("Store your API key in Settings > Keychain, then enter the secret ID here.")
-			.addText((t) =>
-				t.setPlaceholder("e.g. openai-api-key")
-					.setValue(llm.secret_id)
-					.onChange(async (v) => {
-						llm.secret_id = v;
+				)
+				.addButton((btn) =>
+					btn.setButtonText("Delete").setWarning().onClick(async () => {
+						models.splice(i, 1);
 						await this.plugin.saveSettings();
+						this.display();
 					}),
-			);
+				);
+		}
 
 		// Actions
 		containerEl.createEl("h3", { text: "Actions" });
@@ -188,6 +192,79 @@ export class QuickActionsSettingTab extends PluginSettingTab {
 
 	private openActionEditor(action: Action) {
 		new ActionEditModal(this.app, this.plugin, action, () => this.display()).open();
+	}
+}
+
+class ModelEditModal extends Modal {
+	private plugin: QuickActionsPlugin;
+	private model: ModelConfig;
+	private onSaved: () => void;
+	private draft: ModelConfig;
+
+	constructor(app: App, plugin: QuickActionsPlugin, model: ModelConfig, onSaved: () => void) {
+		super(app);
+		this.plugin = plugin;
+		this.model = model;
+		this.onSaved = onSaved;
+		this.draft = { ...model };
+	}
+
+	onOpen() {
+		this.render();
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+
+	private render() {
+		const { contentEl } = this;
+		contentEl.empty();
+
+		contentEl.createEl("h2", { text: "Edit Model" });
+
+		new Setting(contentEl).setName("Name").addText((t) =>
+			t.setPlaceholder("e.g. Sonnet, Haiku, GPT-4o")
+				.setValue(this.draft.name)
+				.onChange((v) => { this.draft.name = v; }),
+		);
+
+		new Setting(contentEl).setName("Provider").addDropdown((d) =>
+			d.addOption("anthropic", "Anthropic")
+				.addOption("openai", "OpenAI")
+				.setValue(this.draft.provider)
+				.onChange((v) => { this.draft.provider = v as "openai" | "anthropic"; }),
+		);
+
+		new Setting(contentEl).setName("Model ID").addText((t) =>
+			t.setPlaceholder("e.g. claude-sonnet-4-6")
+				.setValue(this.draft.model)
+				.onChange((v) => { this.draft.model = v; }),
+		);
+
+		new Setting(contentEl)
+			.setName("API Key Secret ID")
+			.setDesc("Store your API key in Settings > Keychain, then enter the secret ID here.")
+			.addText((t) =>
+				t.setPlaceholder("e.g. anthropic-api-key")
+					.setValue(this.draft.secret_id)
+					.onChange((v) => { this.draft.secret_id = v; }),
+			);
+
+		const footer = new Setting(contentEl);
+		footer.addButton((btn) =>
+			btn.setButtonText("Save").setCta().onClick(async () => {
+				Object.assign(this.model, this.draft);
+				await this.plugin.saveSettings();
+				this.onSaved();
+				this.close();
+			}),
+		);
+		footer.addButton((btn) =>
+			btn.setButtonText("Cancel").onClick(() => {
+				this.close();
+			}),
+		);
 	}
 }
 
@@ -420,6 +497,19 @@ class ActionEditModal extends Modal {
 				break;
 			}
 			case "llm": {
+				const models = this.plugin.settings.models;
+				if (models.length === 0) {
+					new Setting(container).setName("Model").setDesc("No models configured. Add one in the Models section above.");
+				} else {
+					new Setting(container).setName("Model").addDropdown((d) => {
+						d.addOption("", "(use first model)");
+						for (const m of models) {
+							d.addOption(m.name, m.name);
+						}
+						d.setValue(step.model || "");
+						d.onChange((v) => { step.model = v; });
+					});
+				}
 				new Setting(container).setName("Variable name").addText((t) =>
 					t.setValue(step.variable).onChange((v) => { step.variable = v; }),
 				);
