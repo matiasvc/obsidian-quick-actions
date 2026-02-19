@@ -74,9 +74,7 @@ export class QuickActionsSettingTab extends PluginSettingTab {
 		containerEl.createEl("h2", { text: "Quick Actions" });
 
 		// Models
-		containerEl.createEl("h3", { text: "Models" });
-
-		new Setting(containerEl).addButton((btn) =>
+		new Setting(containerEl).setHeading().setName("Models").addButton((btn) =>
 			btn.setButtonText("+ Add Model").onClick(() => {
 				const model: ModelConfig = {
 					name: "New Model",
@@ -118,9 +116,7 @@ export class QuickActionsSettingTab extends PluginSettingTab {
 		}
 
 		// Actions
-		containerEl.createEl("h3", { text: "Actions" });
-
-		new Setting(containerEl).addButton((btn) =>
+		new Setting(containerEl).setHeading().setName("Actions").addButton((btn) =>
 			btn.setButtonText("+ New Action").onClick(() => {
 				const action: Action = {
 					id: generateId(),

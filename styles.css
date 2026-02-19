@@ -1,12 +1,19 @@
 .quick-actions-edit-modal .modal-content {
 	min-width: 500px;
+	overflow-y: auto;
 }
 
 .quick-actions-step {
 	border: 1px solid var(--background-modifier-border);
+	border-left: 3px solid var(--interactive-accent);
 	border-radius: 6px;
 	padding: 8px 12px;
-	margin-bottom: 8px;
+	margin-bottom: 12px;
+	background: var(--background-secondary);
+}
+
+.quick-actions-step > .setting-item:first-child .setting-item-name {
+	font-weight: var(--font-semibold);
 }
 
 .quick-actions-prompt-input {
