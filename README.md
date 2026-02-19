@@ -21,7 +21,7 @@ Configurable quick actions for common vault operations. Build custom commands fr
 |------|-------------|
 | **Prompt** | Ask the user for text input (single-line or multi-line) |
 | **File Picker** | Let the user pick a markdown file from a folder |
-| **Tasks Modal** | Open the Tasks plugin modal to create a task line |
+| **Tasks Modal** | Open the [Tasks plugin](https://github.com/obsidian-tasks-group/obsidian-tasks) modal to create a task line (requires Tasks plugin) |
 | **Insert in Section** | Append or prepend text to a heading section in a file |
 | **Create File** | Create a new markdown file with templated content |
 | **Choice** | Present a list of options for the user to pick from |
