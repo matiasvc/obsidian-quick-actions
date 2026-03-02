@@ -5,14 +5,19 @@
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "node esbuild.config.mjs production"
+		"build": "node esbuild.config.mjs production",
+		"lint": "eslint src/"
 	},
 	"keywords": [],
 	"author": "Matias Varnum",
 	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^22.0.0",
+		"@typescript-eslint/eslint-plugin": "^8.56.1",
+		"@typescript-eslint/parser": "^8.56.1",
 		"esbuild": "^0.24.0",
+		"eslint": "^9.39.3",
+		"eslint-plugin-obsidianmd": "^0.1.9",
 		"obsidian": "latest",
 		"typescript": "^5.7.0"
 	}
