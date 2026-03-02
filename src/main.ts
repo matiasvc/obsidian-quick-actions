@@ -3,6 +3,10 @@ import { QuickActionsSettings, DEFAULT_SETTINGS } from "./types";
 import { executeAction } from "./executor";
 import { QuickActionsSettingTab } from "./settings";
 
+interface AppWithCommands {
+	commands?: { removeCommand?: (id: string) => void };
+}
+
 export default class QuickActionsPlugin extends Plugin {
 	settings: QuickActionsSettings;
 	private registeredCommandIds: string[] = [];
@@ -45,6 +49,6 @@ export default class QuickActionsPlugin extends Plugin {
 	private removeCommand(id: string) {
 		// Obsidian doesn't expose removeCommand publicly, use internal API
 		const fullId = this.manifest.id + ":" + id;
-		(this.app as any).commands?.removeCommand?.(fullId);
+		(this.app as unknown as AppWithCommands).commands?.removeCommand?.(fullId);
 	}
 }

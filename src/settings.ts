@@ -5,7 +5,6 @@ import {
 	Step,
 	StepType,
 	STEP_TYPE_LABELS,
-	QuickActionsSettings,
 	defaultStepForType,
 	generateId,
 } from "./types";
@@ -24,8 +23,8 @@ class FileSuggest extends AbstractInputSuggest<TFile> {
 	}
 
 	selectSuggestion(file: TFile): void {
-		(this as any).textInputEl.value = file.path;
-		(this as any).textInputEl.dispatchEvent(new Event("input"));
+		this.textInputEl.value = file.path;
+		this.textInputEl.dispatchEvent(new Event("input"));
 		this.close();
 	}
 }
@@ -49,8 +48,8 @@ class FolderSuggest extends AbstractInputSuggest<TFolder> {
 
 	selectSuggestion(folder: TFolder): void {
 		const val = folder.path + "/";
-		(this as any).textInputEl.value = val;
-		(this as any).textInputEl.dispatchEvent(new Event("input"));
+		this.textInputEl.value = val;
+		this.textInputEl.dispatchEvent(new Event("input"));
 		this.close();
 	}
 }
@@ -73,7 +72,8 @@ export class QuickActionsSettingTab extends PluginSettingTab {
 
 		// Models
 		new Setting(containerEl).setHeading().setName("Models").addButton((btn) =>
-			btn.setButtonText("+ Add Model").onClick(() => {
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "+" prefix is a UI convention for add buttons
+			btn.setButtonText("+ Add model").onClick(() => {
 				const model: ModelConfig = {
 					name: "New Model",
 					provider: "anthropic",
@@ -115,7 +115,8 @@ export class QuickActionsSettingTab extends PluginSettingTab {
 
 		// Actions
 		new Setting(containerEl).setHeading().setName("Actions").addButton((btn) =>
-			btn.setButtonText("+ New Action").onClick(() => {
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "+" prefix is a UI convention for add buttons
+			btn.setButtonText("+ New action").onClick(() => {
 				const action: Action = {
 					id: generateId(),
 					name: "New Action",
@@ -156,7 +157,7 @@ export class QuickActionsSettingTab extends PluginSettingTab {
 				}),
 			);
 			setting.addButton((btn) => {
-				btn.setButtonText("\u2191").setTooltip("Move Up");
+				btn.setButtonText("\u2191").setTooltip("Move up");
 				if (i > 0) {
 					btn.onClick(async () => {
 						[actions[i - 1], actions[i]] = [actions[i], actions[i - 1]];
@@ -165,11 +166,11 @@ export class QuickActionsSettingTab extends PluginSettingTab {
 					});
 				} else {
 					btn.setDisabled(true);
-					btn.buttonEl.style.visibility = "hidden";
+					btn.buttonEl.addClass("quick-actions-btn-hidden");
 				}
 			});
 			setting.addButton((btn) => {
-				btn.setButtonText("\u2193").setTooltip("Move Down");
+				btn.setButtonText("\u2193").setTooltip("Move down");
 				if (i < actions.length - 1) {
 					btn.onClick(async () => {
 						[actions[i], actions[i + 1]] = [actions[i + 1], actions[i]];
@@ -178,7 +179,7 @@ export class QuickActionsSettingTab extends PluginSettingTab {
 					});
 				} else {
 					btn.setDisabled(true);
-					btn.buttonEl.style.visibility = "hidden";
+					btn.buttonEl.addClass("quick-actions-btn-hidden");
 				}
 			});
 		}
@@ -215,9 +216,10 @@ class ModelEditModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		new Setting(contentEl).setHeading().setName("Edit Model");
+		new Setting(contentEl).setHeading().setName("Edit model");
 
 		new Setting(contentEl).setName("Name").addText((t) =>
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- model names are proper nouns
 			t.setPlaceholder("e.g. Sonnet, Haiku, GPT-4o")
 				.setValue(this.draft.name)
 				.onChange((v) => { this.draft.name = v; }),
@@ -225,21 +227,25 @@ class ModelEditModal extends Modal {
 
 		new Setting(contentEl).setName("Provider").addDropdown((d) =>
 			d.addOption("anthropic", "Anthropic")
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- company names are proper nouns
 				.addOption("openai", "OpenAI")
 				.setValue(this.draft.provider)
 				.onChange((v) => { this.draft.provider = v as "openai" | "anthropic"; }),
 		);
 
 		new Setting(contentEl).setName("Model ID").addText((t) =>
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- e.g. placeholder, not a sentence
 			t.setPlaceholder("e.g. claude-sonnet-4-6")
 				.setValue(this.draft.model)
 				.onChange((v) => { this.draft.model = v; }),
 		);
 
 		new Setting(contentEl)
-			.setName("API Key Secret ID")
+			.setName("API key secret ID")
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "Settings" and "Keychain" are Obsidian UI section names
 			.setDesc("Store your API key in Settings > Keychain, then enter the secret ID here.")
 			.addText((t) =>
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- e.g. placeholder, not a sentence
 				t.setPlaceholder("e.g. anthropic-api-key")
 					.setValue(this.draft.secret_id)
 					.onChange((v) => { this.draft.secret_id = v; }),
@@ -290,7 +296,7 @@ class ActionEditModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 
-		new Setting(contentEl).setHeading().setName("Edit Action");
+		new Setting(contentEl).setHeading().setName("Edit action");
 
 		// Action name
 		new Setting(contentEl).setName("Name").addText((text) =>
@@ -308,7 +314,8 @@ class ActionEditModal extends Modal {
 
 		// Add step button
 		new Setting(contentEl).addButton((btn) =>
-			btn.setButtonText("+ Add Step").onClick(() => {
+			// eslint-disable-next-line obsidianmd/ui/sentence-case -- "+" prefix is a UI convention for add buttons
+			btn.setButtonText("+ Add step").onClick(() => {
 				this.draft.steps.push(defaultStepForType("prompt"));
 				this.render();
 			}),
@@ -358,7 +365,7 @@ class ActionEditModal extends Modal {
 
 		if (index > 0) {
 			header.addButton((btn) =>
-				btn.setButtonText("\u2191").setTooltip("Move Up").onClick(() => {
+				btn.setButtonText("\u2191").setTooltip("Move up").onClick(() => {
 					[this.draft.steps[index - 1], this.draft.steps[index]] = [this.draft.steps[index], this.draft.steps[index - 1]];
 					this.render();
 				}),
@@ -366,7 +373,7 @@ class ActionEditModal extends Modal {
 		}
 		if (index < this.draft.steps.length - 1) {
 			header.addButton((btn) =>
-				btn.setButtonText("\u2193").setTooltip("Move Down").onClick(() => {
+				btn.setButtonText("\u2193").setTooltip("Move down").onClick(() => {
 					[this.draft.steps[index], this.draft.steps[index + 1]] = [this.draft.steps[index + 1], this.draft.steps[index]];
 					this.render();
 				}),
@@ -422,6 +429,7 @@ class ActionEditModal extends Modal {
 						.onChange((v) => { step.target = v; }),
 				);
 				new Setting(container).setName("Section heading").addText((t) =>
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- contains markdown syntax, not a sentence
 					t.setPlaceholder("e.g. ## Log").setValue(step.section).onChange((v) => { step.section = v; }),
 				);
 				new Setting(container).setName("Position").addDropdown((d) =>
@@ -484,6 +492,7 @@ class ActionEditModal extends Modal {
 						.onChange((v) => { step.target = v; }),
 				);
 				new Setting(container).setName("Section (optional)").addText((t) =>
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- contains markdown syntax, not a sentence
 					t.setPlaceholder("e.g. ## Log")
 						.setValue(step.section)
 						.onChange((v) => { step.section = v; }),
@@ -493,7 +502,7 @@ class ActionEditModal extends Modal {
 			case "llm": {
 				const models = this.plugin.settings.models;
 				if (models.length === 0) {
-					new Setting(container).setName("Model").setDesc("No models configured. Add one in the Models section above.");
+					new Setting(container).setName("Model").setDesc("No models configured. Add one in the models section above.");
 				} else {
 					new Setting(container).setName("Model").addDropdown((d) => {
 						d.addOption("", "(use first model)");

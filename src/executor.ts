@@ -4,6 +4,17 @@ import { openPromptModal, openFilePickerModal, openChoiceModal } from "./modals"
 
 declare const window: Window & { moment: typeof import("moment") };
 
+interface TasksPluginApi {
+	apiV1?: { createTaskLineModal?: () => Promise<string | null> };
+}
+interface ObsidianAppInternal {
+	plugins?: { plugins?: Record<string, TasksPluginApi> };
+}
+
+interface ViewWithScroll {
+	currentMode?: { applyScroll?: (line: number) => void };
+}
+
 function ensureExtension(path: string): string {
 	const basename = path.split("/").pop() ?? path;
 	if (!basename.includes(".")) return path + ".md";
@@ -66,7 +77,7 @@ async function executeStep(app: App, step: Step, vars: Record<string, string>, m
 			return false;
 		}
 		case "tasks_modal": {
-			const tasksPlugin = (app as any).plugins?.plugins?.["obsidian-tasks-plugin"];
+			const tasksPlugin = (app as unknown as ObsidianAppInternal).plugins?.plugins?.["obsidian-tasks-plugin"];
 			if (!tasksPlugin?.apiV1?.createTaskLineModal) {
 				new Notice("Tasks plugin not available");
 				return true;
@@ -111,15 +122,15 @@ async function executeStep(app: App, step: Step, vars: Record<string, string>, m
 				return false;
 			}
 			const leaf = app.workspace.getLeaf(false);
-			await leaf.openFile(file as TFile);
+			await leaf.openFile(file);
 
 			if (step.section) {
 				const section = resolveTemplate(step.section, vars);
 				const headingText = section.replace(/^#+\s*/, "");
-				const cache = app.metadataCache.getFileCache(file as TFile);
+				const cache = app.metadataCache.getFileCache(file);
 				const heading = cache?.headings?.find((h) => h.heading === headingText);
 				if (heading) {
-					const view = leaf.view as any;
+					const view = leaf.view as unknown as ViewWithScroll;
 					view?.currentMode?.applyScroll?.(heading.position.start.line);
 				}
 			}
@@ -137,9 +148,10 @@ async function executeStep(app: App, step: Step, vars: Record<string, string>, m
 			const systemPrompt = resolveTemplate(step.system_prompt, vars);
 			const userPrompt = resolveTemplate(step.user_prompt, vars);
 
-			const apiKey = await app.secretStorage.getSecret(config.secret_id);
+			const apiKey = app.secretStorage.getSecret(config.secret_id);
 			if (!apiKey) {
-				new Notice("LLM API key not configured. Set it in Quick Actions settings.");
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- "LLM" is an acronym, not a capitalized proper noun
+				new Notice("LLM API key not configured. Set it in plugin settings.");
 				return true;
 			}
 
@@ -147,6 +159,7 @@ async function executeStep(app: App, step: Step, vars: Record<string, string>, m
 			const result = await callLLM(config.provider, config.model, apiKey, systemPrompt, userPrompt);
 			notice.hide();
 			if (result === null) {
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- "LLM" is an acronym, not a capitalized proper noun
 				new Notice("LLM request failed");
 				return true;
 			}

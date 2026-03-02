@@ -40,3 +40,7 @@
 	display: flex;
 	justify-content: flex-end;
 }
+
+.quick-actions-btn-hidden {
+	visibility: hidden;
+}
