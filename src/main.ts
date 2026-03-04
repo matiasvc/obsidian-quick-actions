@@ -3,52 +3,42 @@ import { QuickActionsSettings, DEFAULT_SETTINGS } from "./types";
 import { executeAction } from "./executor";
 import { QuickActionsSettingTab } from "./settings";
 
-interface AppWithCommands {
-	commands?: { removeCommand?: (id: string) => void };
-}
-
 export default class QuickActionsPlugin extends Plugin {
-	settings: QuickActionsSettings;
-	private registeredCommandIds: string[] = [];
+  settings: QuickActionsSettings;
+  private registeredCommandIds: string[] = [];
 
-	async onload() {
-		await this.loadSettings();
-		this.refreshCommands();
-		this.addSettingTab(new QuickActionsSettingTab(this.app, this));
-	}
+  async onload() {
+    await this.loadSettings();
+    this.refreshCommands();
+    this.addSettingTab(new QuickActionsSettingTab(this.app, this));
+  }
 
-	async loadSettings() {
-		const data = await this.loadData();
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
-	}
+  async loadSettings() {
+    const data = await this.loadData();
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+  }
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-		this.refreshCommands();
-	}
+  async saveSettings() {
+    await this.saveData(this.settings);
+    this.refreshCommands();
+  }
 
-	refreshCommands() {
-		// Remove old commands
-		for (const id of this.registeredCommandIds) {
-			this.removeCommand(id);
-		}
-		this.registeredCommandIds = [];
+  refreshCommands() {
+    // Remove old commands
+    for (const id of this.registeredCommandIds) {
+      this.removeCommand(id);
+    }
+    this.registeredCommandIds = [];
 
-		// Register new commands
-		for (const action of this.settings.actions) {
-			const commandId = `action-${action.id}`;
-			this.addCommand({
-				id: commandId,
-				name: action.name,
-				callback: () => executeAction(this.app, action, this.settings.models),
-			});
-			this.registeredCommandIds.push(commandId);
-		}
-	}
-
-	private removeCommand(id: string) {
-		// Obsidian doesn't expose removeCommand publicly, use internal API
-		const fullId = this.manifest.id + ":" + id;
-		(this.app as unknown as AppWithCommands).commands?.removeCommand?.(fullId);
-	}
+    // Register new commands
+    for (const action of this.settings.actions) {
+      const commandID = `action-${action.id}`;
+      this.addCommand({
+        id: commandID,
+        name: action.name,
+        callback: () => executeAction(this.app, action, this.settings.models),
+      });
+      this.registeredCommandIds.push(commandID);
+    }
+  }
 }
