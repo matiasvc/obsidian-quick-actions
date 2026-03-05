@@ -4,7 +4,7 @@ export class PromptModal extends Modal {
   private resolve: (value: string | null) => void;
   private label: string;
   private multiline: boolean;
-  private value = "";
+  private inputElement: HTMLInputElement | HTMLTextAreaElement;
   private submitted = false;
 
   constructor(app: App, label: string, multiline: boolean, resolve: (value: string | null) => void) {
@@ -19,29 +19,39 @@ export class PromptModal extends Modal {
     contentEl.createEl("label", { text: this.label });
 
     if (this.multiline) {
+      // Multiline text input
       const textarea = contentEl.createEl("textarea");
       textarea.addClass("quick-actions-prompt-textarea");
       textarea.rows = 6;
+
+      this.inputElement = textarea;
       textarea.focus();
-      textarea.addEventListener("input", () => { this.value = textarea.value; });
+
       textarea.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
           this.submitted = true;
           this.close();
         }
       });
+
       const footer = contentEl.createDiv("quick-actions-prompt-footer");
+
+      // Submit button
       const btn = footer.createEl("button", { text: "Submit" });
       btn.addClass("mod-cta");
       btn.addEventListener("click", () => {
         this.submitted = true;
         this.close();
       });
+
     } else {
+      // Text input
       const input = contentEl.createEl("input", { type: "text" });
       input.addClass("quick-actions-prompt-input");
+
+      this.inputElement = input;
       input.focus();
-      input.addEventListener("input", () => { this.value = input.value; });
+
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
           this.submitted = true;
@@ -52,11 +62,7 @@ export class PromptModal extends Modal {
   }
 
   onClose() {
-    if (this.submitted) {
-      this.resolve(this.value || null);
-    } else {
-      this.resolve(null);
-    }
+    this.resolve(this.submitted ? this.inputElement.value : null);
   }
 }
 
@@ -91,7 +97,9 @@ export class FilePickerModal extends FuzzySuggestModal<TFile> {
   }
 
   onClose() {
-    // Small delay so onChooseItem fires first if an item was selected
+    // FuzzySuggestModal fires onClose before onChooseItem when an item is
+    // selected. Delay the cancellation check so onChooseItem can set the
+    // picked flag first.
     setTimeout(() => {
       if (!this.picked) {
         this.resolve(null);
@@ -126,6 +134,9 @@ export class ChoiceModal extends FuzzySuggestModal<string> {
   }
 
   onClose() {
+    // FuzzySuggestModal fires onClose before onChooseItem when an item is
+    // selected. Delay the cancellation check so onChooseItem can set the
+    // picked flag first.
     setTimeout(() => {
       if (!this.picked) {
         this.resolve(null);
