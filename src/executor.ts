@@ -4,45 +4,6 @@ import { openPromptModal, openFilePickerModal, openChoiceModal } from "./modals"
 
 declare const window: Window & { moment: typeof import("moment") };
 
-interface TasksPluginApi {
-  apiV1?: { createTaskLineModal?: () => Promise<string | null> };
-}
-interface ObsidianAppInternal {
-  plugins?: { plugins?: Record<string, TasksPluginApi> };
-}
-
-interface ViewWithScroll {
-  currentMode?: { applyScroll?: (line: number) => void };
-}
-
-function ensureExtension(path: string): string {
-  const basename = path.split("/").pop() ?? path;
-  if (!basename.includes(".")) return path + ".md";
-  return path;
-}
-
-export function resolveTemplate(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (match, name) => {
-    return vars[name] !== undefined ? vars[name] : match;
-  });
-}
-
-function resolvePathTemplate(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (match, name) => {
-    if (vars[name] === undefined) return match;
-    return vars[name].replace(/[/\\]/g, "-");
-  });
-}
-
-function getBuiltinVars(): Record<string, string> {
-  const now = window.moment();
-  return {
-    date: now.format("YYYY-MM-DD"),
-    time: now.format("HH:mm"),
-    timestamp: now.format("YYYYMMDDHHmmss"),
-  };
-}
-
 export async function executeAction(app: App, action: Action, models: ModelConfig[]): Promise<void> {
   try {
     const vars = getBuiltinVars();
@@ -55,6 +16,41 @@ export async function executeAction(app: App, action: Action, models: ModelConfi
     console.error(`Quick Actions "${action.name}" failed:`, e);
     new Notice(`Action "${action.name}" failed: ${e}`);
   }
+}
+
+interface TasksPluginApi {
+  apiV1?: { createTaskLineModal?: () => Promise<string | null> };
+}
+interface ObsidianAppInternal {
+  plugins?: { plugins?: Record<string, TasksPluginApi> };
+}
+
+interface ViewWithScroll {
+  currentMode?: { applyScroll?: (line: number) => void };
+}
+
+// Adds a `.md` file extension if the path doesnt have it already.
+function ensureMdExtension(path: string): string {
+  if (!path.endsWith(".md")) return path + ".md";
+  return path;
+}
+
+// Substitutes {{variable}} placeholders in a template string with values from vars.
+// Unknown variables are left as-is.
+function resolveTemplate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, name) => {
+    return vars[name] !== undefined ? vars[name] : match;
+  });
+}
+
+// Initialize the built-in variables.
+function getBuiltinVars(): Record<string, string> {
+  const now = window.moment();
+  return {
+    date: now.format("YYYY-MM-DD"),
+    time: now.format("HH:mm"),
+    timestamp: now.format("YYYYMMDDHHmmss"),
+  };
 }
 
 // Returns true if the action should be cancelled
@@ -88,16 +84,15 @@ async function executeStep(app: App, step: Step, vars: Record<string, string>, m
       return false;
     }
     case "insert_in_section": {
-      const target = resolvePathTemplate(step.target, vars);
+      const target = ensureMdExtension(resolveTemplate(step.target, vars));
       const section = resolveTemplate(step.section, vars);
       const text = resolveTemplate(step.format, vars);
-      const templatePath = resolvePathTemplate(step.templatePath, vars);
+      const templatePath = resolveTemplate(step.templatePath, vars);
       await insertInSection(app, target, section, step.position, text, step.createIfMissing, templatePath);
       return false;
     }
     case "create_file": {
-      let path = resolvePathTemplate(step.path, vars);
-      path = ensureExtension(path);
+      const path = ensureMdExtension(resolveTemplate(step.path, vars));
       const content = resolveTemplate(step.content, vars);
       const existing = app.vault.getAbstractFileByPath(path);
       if (existing) {
@@ -115,7 +110,7 @@ async function executeStep(app: App, step: Step, vars: Record<string, string>, m
       return false;
     }
     case "open_file": {
-      const target = ensureExtension(resolvePathTemplate(step.target, vars));
+      const target = ensureMdExtension(resolveTemplate(step.target, vars));
       const file = app.vault.getAbstractFileByPath(target);
       if (!file || !(file instanceof TFile)) {
         new Notice(`File not found: ${target}`);
@@ -178,15 +173,13 @@ async function insertInSection(
   createIfMissing: boolean,
   templatePath: string,
 ): Promise<void> {
-  targetPath = ensureExtension(targetPath);
   let file = app.vault.getAbstractFileByPath(targetPath);
 
   // Create file from template if missing
   if (!file && createIfMissing) {
     try {
       if (templatePath) {
-        templatePath = ensureExtension(templatePath);
-        const templateFile = app.vault.getAbstractFileByPath(templatePath);
+        const templateFile = app.vault.getAbstractFileByPath(ensureMdExtension(templatePath));
         if (templateFile && templateFile instanceof TFile) {
           const templateContent = await app.vault.read(templateFile);
           file = await app.vault.create(targetPath, templateContent);
