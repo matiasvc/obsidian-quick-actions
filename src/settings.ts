@@ -10,7 +10,9 @@ import {
 } from "./types";
 import QuickActionsPlugin from "./main";
 
+// File picker when editing action steps.
 class FileSuggest extends AbstractInputSuggest<TFile> {
+
   getSuggestions(query: string): TFile[] {
     const lower = query.toLowerCase();
     return this.app.vault.getMarkdownFiles()
@@ -23,13 +25,14 @@ class FileSuggest extends AbstractInputSuggest<TFile> {
   }
 
   selectSuggestion(file: TFile): void {
-    this.textInputEl.value = file.path;
-    this.textInputEl.dispatchEvent(new Event("input"));
+    this.setValue(file.path);
     this.close();
   }
 }
 
+// Folder picker when editing action steps.
 class FolderSuggest extends AbstractInputSuggest<TFolder> {
+
   getSuggestions(query: string): TFolder[] {
     const lower = query.toLowerCase();
     const folders: TFolder[] = [];
@@ -47,9 +50,7 @@ class FolderSuggest extends AbstractInputSuggest<TFolder> {
   }
 
   selectSuggestion(folder: TFolder): void {
-    const val = folder.path + "/";
-    this.textInputEl.value = val;
-    this.textInputEl.dispatchEvent(new Event("input"));
+    this.setValue(folder.path + "/");
     this.close();
   }
 }
