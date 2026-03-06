@@ -9,6 +9,7 @@ import {
   generateId,
 } from "./types";
 import QuickActionsPlugin from "./main";
+import { getBuiltinVars } from "./executor";
 
 // File picker when editing action steps.
 class FileSuggest extends AbstractInputSuggest<TFile> {
@@ -55,6 +56,7 @@ class FolderSuggest extends AbstractInputSuggest<TFolder> {
   }
 }
 
+// Returns a summary string of a series of steps.
 function stepSummary(steps: Step[]): string {
   return steps.map((s) => STEP_TYPE_LABELS[s.type]).join(" -> ");
 }
@@ -298,6 +300,19 @@ class ActionEditModal extends Modal {
     contentEl.empty();
 
     new Setting(contentEl).setHeading().setName("Edit action");
+
+    // Built-in variables reference
+    const builtinVars = getBuiltinVars();
+    const varsSection = new Setting(contentEl).setName("Built-in variables");
+    const table = varsSection.descEl.createEl("table", { cls: "quick-actions-vars-table" });
+    const thead = table.createEl("tr");
+    thead.createEl("th", { text: "Keyword" });
+    thead.createEl("th", { text: "Value" });
+    for (const [key, value] of Object.entries(builtinVars)) {
+      const row = table.createEl("tr");
+      row.createEl("td").createEl("code", { text: `{{${key}}}` });
+      row.createEl("td", { text: value });
+    }
 
     // Action name
     new Setting(contentEl).setName("Name").addText((text) =>

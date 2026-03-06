@@ -41,6 +41,21 @@
 	justify-content: flex-end;
 }
 
+.quick-actions-vars-table {
+	margin-top: 4px;
+}
+
+.quick-actions-vars-table th {
+	text-align: left;
+	font-weight: var(--font-semibold);
+	padding: 0 12px 2px 0;
+	color: var(--text-muted);
+}
+
+.quick-actions-vars-table td {
+	padding: 1px 12px 1px 0;
+}
+
 .quick-actions-btn-hidden {
 	visibility: hidden;
 }

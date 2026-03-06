@@ -18,6 +18,16 @@ export async function executeAction(app: App, action: Action, models: ModelConfi
   }
 }
 
+// Initialize the built-in variables.
+export function getBuiltinVars(): Record<string, string> {
+  const now = window.moment();
+  return {
+    date: now.format("YYYY-MM-DD"),
+    time: now.format("HH:mm"),
+    timestamp: now.format("YYYYMMDDHHmmss"),
+  };
+}
+
 interface TasksPluginApi {
   apiV1?: { createTaskLineModal?: () => Promise<string | null> };
 }
@@ -43,15 +53,6 @@ function resolveTemplate(template: string, vars: Record<string, string>): string
   });
 }
 
-// Initialize the built-in variables.
-function getBuiltinVars(): Record<string, string> {
-  const now = window.moment();
-  return {
-    date: now.format("YYYY-MM-DD"),
-    time: now.format("HH:mm"),
-    timestamp: now.format("YYYYMMDDHHmmss"),
-  };
-}
 
 // Returns true if the action should be cancelled
 async function executeStep(app: App, step: Step, vars: Record<string, string>, models: ModelConfig[]): Promise<boolean> {
