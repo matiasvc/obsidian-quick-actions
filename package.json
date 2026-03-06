@@ -1,6 +1,6 @@
 {
   "name": "obsidian-quick-actions",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Configurable quick actions for common vault operations",
   "main": "main.js",
   "scripts": {
