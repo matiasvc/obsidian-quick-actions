@@ -29,6 +29,7 @@ export class PromptModal extends Modal {
 
       textarea.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
           this.submitted = true;
           this.close();
         }
@@ -54,6 +55,7 @@ export class PromptModal extends Modal {
 
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
+          e.preventDefault();
           this.submitted = true;
           this.close();
         }
