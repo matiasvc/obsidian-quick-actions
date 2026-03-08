@@ -16,16 +16,14 @@
 	font-weight: var(--font-semibold);
 }
 
-.quick-actions-prompt-input {
+.quick-actions-prompt-input,
+.quick-actions-prompt-textarea {
 	width: 100%;
 	margin-top: 8px;
 	padding: 6px 8px;
 }
 
 .quick-actions-prompt-textarea {
-	width: 100%;
-	margin-top: 8px;
-	padding: 6px 8px;
 	resize: vertical;
 }
 
