@@ -302,32 +302,32 @@ class ActionEditModal extends Modal {
 
     new Setting(contentEl).setHeading().setName("Edit action");
 
-    // Built-in variables reference
+    // Action info group: Name, Built-in variables, URI
+    const infoGroup = contentEl.createDiv("quick-actions-step quick-actions-info-group");
+
+    // Name
+    new Setting(infoGroup).setName("Name").addText((text) =>
+      text.setValue(this.draft.name).onChange((val) => {
+        this.draft.name = val;
+        uriCode.setText(this.buildUri(val));
+      }),
+    );
+
+    // Built-in variables
     const builtinVars = getBuiltinVars();
-    const varsSection = new Setting(contentEl).setName("Built-in variables");
-    const table = varsSection.descEl.createEl("table", { cls: "quick-actions-vars-table" });
-    const thead = table.createEl("tr");
-    thead.createEl("th", { text: "Keyword" });
-    thead.createEl("th", { text: "Value" });
+    const varsSetting = new Setting(infoGroup).setName("Variables");
+    const table = varsSetting.descEl.createEl("table", { cls: "quick-actions-vars-table" });
     for (const [key, value] of Object.entries(builtinVars)) {
       const row = table.createEl("tr");
       row.createEl("td").createEl("code", { text: `{{${key}}}` });
       row.createEl("td", { text: value });
     }
 
-    // Action name + URI preview
-    let uriCode: HTMLElement;
-
-    new Setting(contentEl).setName("Name").addText((text) =>
-      text.setValue(this.draft.name).onChange((val) => {
-        this.draft.name = val;
-        uriCode.setText(`obsidian://quick-actions?vault=${encodeURIComponent(this.app.vault.getName())}&run=${encodeURIComponent(toSlug(val))}`);
-      }),
-    );
-
-    const uriSetting = new Setting(contentEl).setName("URI");
-    uriCode = uriSetting.descEl.createEl("code", {
-      text: `obsidian://quick-actions?vault=${encodeURIComponent(this.app.vault.getName())}&run=${encodeURIComponent(toSlug(this.draft.name))}`,
+    // URI
+    const uriSetting = new Setting(infoGroup).setName("URI");
+    const uriCode = uriSetting.descEl.createEl("code", {
+      cls: "quick-actions-uri-code",
+      text: this.buildUri(this.draft.name),
     });
     uriSetting.addButton((btn) => {
       setIcon(btn.buttonEl, "copy");
@@ -372,6 +372,12 @@ class ActionEditModal extends Modal {
         this.close();
       }),
     );
+  }
+
+  private buildUri(name: string): string {
+    const vault = encodeURIComponent(this.app.vault.getName());
+    const run = encodeURIComponent(toSlug(name));
+    return `obsidian://quick-actions?vault=${vault}&run=${run}`;
   }
 
   private renderStep(container: HTMLElement, index: number) {
