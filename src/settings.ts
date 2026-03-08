@@ -1,4 +1,4 @@
-import { AbstractInputSuggest, App, Modal, PluginSettingTab, Setting, TFile, TFolder } from "obsidian";
+import { AbstractInputSuggest, App, Modal, Notice, PluginSettingTab, Setting, setIcon, TFile, TFolder } from "obsidian";
 import {
   Action,
   ModelConfig,
@@ -7,6 +7,7 @@ import {
   STEP_TYPE_LABELS,
   defaultStepForType,
   generateId,
+  toSlug,
 } from "./types";
 import QuickActionsPlugin from "./main";
 import { getBuiltinVars } from "./executor";
@@ -314,12 +315,27 @@ class ActionEditModal extends Modal {
       row.createEl("td", { text: value });
     }
 
-    // Action name
+    // Action name + URI preview
+    let uriCode: HTMLElement;
+
     new Setting(contentEl).setName("Name").addText((text) =>
       text.setValue(this.draft.name).onChange((val) => {
         this.draft.name = val;
+        uriCode.setText(`obsidian://quick-actions?run=${toSlug(val)}`);
       }),
     );
+
+    const uriSetting = new Setting(contentEl).setName("URI");
+    uriCode = uriSetting.descEl.createEl("code", {
+      text: `obsidian://quick-actions?run=${toSlug(this.draft.name)}`,
+    });
+    uriSetting.addButton((btn) => {
+      setIcon(btn.buttonEl, "copy");
+      btn.setTooltip("Copy URI").onClick(() => {
+        navigator.clipboard.writeText(uriCode.getText());
+        new Notice("URI copied to clipboard");
+      });
+    });
 
     // Steps list
     const stepsContainer = contentEl.createDiv("quick-actions-steps-container");

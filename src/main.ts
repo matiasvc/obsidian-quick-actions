@@ -1,5 +1,5 @@
-import { Plugin } from "obsidian";
-import { QuickActionsSettings, DEFAULT_SETTINGS } from "./types";
+import { Notice, Plugin } from "obsidian";
+import { QuickActionsSettings, DEFAULT_SETTINGS, toSlug } from "./types";
 import { executeAction } from "./executor";
 import { QuickActionsSettingTab } from "./settings";
 
@@ -11,6 +11,22 @@ export default class QuickActionsPlugin extends Plugin {
     await this.loadSettings();
     this.refreshCommands();
     this.addSettingTab(new QuickActionsSettingTab(this.app, this));
+
+    this.registerObsidianProtocolHandler("quick-actions", (params) => {
+      const actionSlug = params.run;
+      if (!actionSlug) {
+        new Notice("Quick Actions: missing 'run' parameter");
+        return;
+      }
+      const action = this.settings.actions.find(
+        (a) => toSlug(a.name) === actionSlug
+      );
+      if (!action) {
+        new Notice(`Quick Actions: unknown action "${actionSlug}"`);
+        return;
+      }
+      executeAction(this.app, action, this.settings.models);
+    });
   }
 
   async loadSettings() {
