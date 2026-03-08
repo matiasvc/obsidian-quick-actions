@@ -321,13 +321,13 @@ class ActionEditModal extends Modal {
     new Setting(contentEl).setName("Name").addText((text) =>
       text.setValue(this.draft.name).onChange((val) => {
         this.draft.name = val;
-        uriCode.setText(`obsidian://quick-actions?run=${toSlug(val)}`);
+        uriCode.setText(`obsidian://quick-actions?vault=${encodeURIComponent(this.app.vault.getName())}&run=${encodeURIComponent(toSlug(val))}`);
       }),
     );
 
     const uriSetting = new Setting(contentEl).setName("URI");
     uriCode = uriSetting.descEl.createEl("code", {
-      text: `obsidian://quick-actions?run=${toSlug(this.draft.name)}`,
+      text: `obsidian://quick-actions?vault=${encodeURIComponent(this.app.vault.getName())}&run=${encodeURIComponent(toSlug(this.draft.name))}`,
     });
     uriSetting.addButton((btn) => {
       setIcon(btn.buttonEl, "copy");
