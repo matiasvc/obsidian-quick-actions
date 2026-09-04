@@ -103,6 +103,7 @@ An empty settings page offers three starters that open a prefilled editor: **Cap
 ```bash
 npm install
 npm run build   # bundle to main.js
+npm run deploy  # build, copy into $OBSIDIAN_VAULT (default ~/Obsidian) and reload the plugin
 npm run lint    # eslint with the obsidianmd rules
 npm test        # unit tests for the pure modules (variables, step table)
 ```
