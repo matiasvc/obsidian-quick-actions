@@ -13,9 +13,11 @@ export interface FilePickerStep {
   folder: string;
 }
 
-export interface TasksModalStep {
-  type: "tasks_modal";
+export interface QuickTaskStep {
+  type: "quick_task";
   variable: string;
+  project: string; // templated: a note from an earlier step or a path, "" for none
+  prefill: string; // templated: text already in the quick-add box
 }
 
 export interface InsertInSectionStep {
@@ -56,7 +58,7 @@ export interface LLMStep {
   model: string;
 }
 
-export type Step = PromptStep | FilePickerStep | TasksModalStep | InsertInSectionStep | CreateFileStep | ChoiceStep | OpenFileStep | LLMStep;
+export type Step = PromptStep | FilePickerStep | QuickTaskStep | InsertInSectionStep | CreateFileStep | ChoiceStep | OpenFileStep | LLMStep;
 
 export type StepType = Step["type"];
 

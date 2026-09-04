@@ -73,6 +73,9 @@
   font-size: var(--font-ui-smaller);
   color: var(--text-faint);
 }
+.quick-actions-card-body .setting-item.is-warning .setting-item-name {
+  color: var(--text-error);
+}
 .quick-actions-error {
   color: var(--text-error);
   font-size: var(--font-ui-smaller);

@@ -19,6 +19,7 @@ import { PillField, createPillField } from "./pillfield";
 import { VarItem, attachVarPicker } from "./varpicker";
 import { FieldFocusTracker, copyUri, describeInput, formatSeconds, iconButton, iconEl, renderInBand, renderPill, textButton, truncate } from "./ui";
 import { showAddStepMenu, showRowMenu } from "./menus";
+import { findQuickTasks } from "./quicktasks";
 import { enableDragReorder, moveItem } from "./dragreorder";
 
 // What a "Do" step would do, phrased for a step that has not run yet.
@@ -270,12 +271,15 @@ export class ActionEditModal extends Modal {
     const inBand = card.createDiv();
     this.renderInBand(inBand, i);
     const body = card.createDiv("quick-actions-card-body");
-    if (step.type === "tasks_modal") {
-      new Setting(body)
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- Tasks is a plugin name
-        .setName("Opens the Tasks plugin dialog")
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- Tasks is a plugin name
-        .setDesc("The task line it builds becomes this step's output. Nothing to configure. Needs the Tasks plugin.");
+    if (step.type === "quick_task") {
+      const found = findQuickTasks(this.app);
+      if ("error" in found) {
+        const warning = new Setting(body)
+          // eslint-disable-next-line obsidianmd/ui/sentence-case -- Quick Tasks is a plugin name
+          .setName("Needs the Quick Tasks plugin")
+          .setDesc(`${found.error}. Enable it and this step opens its add box and hands the new task note down.`);
+        warning.settingEl.addClass("is-warning");
+      }
     }
     for (const f of def.fields) {
       if (f.showIf && !f.showIf(step)) continue;
@@ -542,6 +546,9 @@ export class ActionEditModal extends Modal {
     } else if (step.type === "open_file") {
       label("Would open");
       marked(step.target, "is-muted");
+    } else if (step.type === "quick_task" && result.note) {
+      label("Would create");
+      pane.createDiv({ cls: "quick-actions-result is-muted", text: result.note });
     }
 
     if (result.error) {

@@ -10,7 +10,7 @@ Configurable quick actions for common vault operations. Build custom commands fr
 - **LLM integration** - call Anthropic or OpenAI models as steps, with the reply available to later steps
 - **Multiple named models** - configure several models and choose per step which to use
 - **File creation and editing** - create new files or insert text under a heading in an existing file
-- **Interactive inputs** - ask for text, pick a file from a folder, or present a list of options
+- **Interactive inputs** - ask for text, pick a file from a folder, present a list of options, or type a task into the Quick Tasks box
 - **Auto-registered commands** - every action becomes an Obsidian command, reachable from the command palette, a hotkey, or its URI
 - **Mobile support** - works on desktop and mobile (the pill editor falls back to a plain text field on mobile)
 
@@ -23,13 +23,15 @@ Steps are grouped by what they do. Steps that produce a value name their output;
 | Ask | **Ask me** | A question with a text box (single or multi-line) | text |
 | Ask | **Choice** | Pick one option from a list | text |
 | Ask | **Pick a file** | Choose a note from a folder | file |
-| Ask | **Tasks modal** | Build a task line with the [Tasks plugin](https://github.com/obsidian-tasks-group/obsidian-tasks) modal (requires Tasks) | text |
+| Ask | **Quick task** | Type a task into the [Quick Tasks](https://github.com/matiasvc/obsidian-quick-tasks) quick-add box (dates, `!priority`, `#tags`, `@project`, repeat phrases) and create its note. Optional project link and prefilled text. Requires Quick Tasks | file |
 | Generate | **Ask a model** | Send a system and user prompt to a configured model, keep the reply | text |
 | Do | **Create file** | Write a new note from a templated path and content | file |
 | Do | **Insert in section** | Add text under a heading in a note, at the start or end of the section | nothing |
 | Do | **Open file** | Open a note, optionally scrolled to a heading | nothing |
 
 A `file` output is a vault path. **Insert in section** and **Open file** take a file as their target, so a `Create file` step followed by `Open file` with target `{{note}}` opens the note that was just created.
+
+**Quick task** produces the new task note, so `Insert in section` with the text `![[{{task}}]]` embeds it in another note as Quick Tasks' live widget, and `Open file` with target `{{task}}` opens it. Its **Project** field (a note from an earlier step, or a path) becomes the task's `project` link; **Prefill** is typed into the box before you start. Without the Quick Tasks plugin the step fails with a notice and the editor shows a warning on the step. A test run opens the box and reports what it would create without writing the note.
 
 ## Variables
 

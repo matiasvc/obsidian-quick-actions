@@ -81,17 +81,26 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     ],
     make: () => ({ type: "file_picker", variable: "file", folder: "" }),
   },
-  tasks_modal: {
-    type: "tasks_modal",
-    verb: "Tasks modal",
-    icon: "square-check",
+  quick_task: {
+    type: "quick_task",
+    verb: "Quick task",
+    icon: "list-checks",
     group: "ask",
-    description: "Build a task line with the Tasks plugin",
-    output: "text",
+    description: "Type a task in the Quick Tasks box, get its note",
+    output: "file",
     defaultOutput: "task",
-    outputHint: "the task line",
-    fields: [],
-    make: () => ({ type: "tasks_modal", variable: "task" }),
+    outputHint: "the task note",
+    fields: [
+      {
+        key: "project",
+        label: "Project",
+        kind: "file",
+        desc: "Linked from the task as its project. A note from an earlier step, or a path. Leave empty for none.",
+        placeholder: "{{file}}",
+      },
+      { key: "prefill", label: "Prefill", kind: "line", desc: "Typed into the box before you start, so a tag or a date is already there.", placeholder: "#work" },
+    ],
+    make: () => ({ type: "quick_task", variable: "task", project: "", prefill: "" }),
   },
   llm: {
     type: "llm",
@@ -176,7 +185,7 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
 };
 
 export const STEP_GROUPS: { id: StepGroup; label: string; types: StepType[] }[] = [
-  { id: "ask", label: "Ask", types: ["prompt", "choice", "file_picker", "tasks_modal"] },
+  { id: "ask", label: "Ask", types: ["prompt", "choice", "file_picker", "quick_task"] },
   { id: "generate", label: "Generate", types: ["llm"] },
   { id: "do", label: "Do", types: ["create_file", "insert_in_section", "open_file"] },
 ];

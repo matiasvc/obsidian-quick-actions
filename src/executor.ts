@@ -3,6 +3,7 @@ import { Action, Step, ModelConfig, OutputType } from "./types";
 import { STEP_DEFS } from "./steps";
 import { resolveTemplate } from "./variables";
 import { callLLM, findModel } from "./llm";
+import { findQuickTasks, taskSummary } from "./quicktasks";
 import { openPromptModal, openFilePickerModal, openChoiceModal } from "./modals";
 
 declare const window: Window & { moment: typeof import("moment") };
@@ -95,13 +96,6 @@ function unresolvedIn(resolved: Record<string, string>): string[] {
   return names;
 }
 
-interface TasksPluginApi {
-  apiV1?: { createTaskLineModal?: () => Promise<string | null> };
-}
-interface ObsidianAppInternal {
-  plugins?: { plugins?: Record<string, TasksPluginApi> };
-}
-
 interface ViewWithScroll {
   currentMode?: { applyScroll?: (line: number) => void };
 }
@@ -142,12 +136,26 @@ async function executeStep(app: App, step: Step, vars: Record<string, string>, m
       if (value === null) return cancelled("No files found or selection cancelled");
       return produce(ok({ folder }), step, value, vars);
     }
-    case "tasks_modal": {
-      const tasksPlugin = (app as unknown as ObsidianAppInternal).plugins?.plugins?.["obsidian-tasks-plugin"];
-      if (!tasksPlugin?.apiV1?.createTaskLineModal) return failed("Tasks plugin not available");
-      const taskLine = await tasksPlugin.apiV1.createTaskLineModal();
-      if (!taskLine) return cancelled();
-      return produce(ok(), step, taskLine, vars);
+    case "quick_task": {
+      const found = findQuickTasks(app);
+      if ("error" in found) return failed(found.error);
+      const resolved = { project: resolveTemplate(step.project, vars), prefill: resolveTemplate(step.prefill, vars) };
+      const qa = await found.api.askTask({ project: resolved.project || undefined, prefill: resolved.prefill || undefined });
+      if (!qa) return cancelled();
+      if (!write) {
+        // A placeholder with the real shape, so later steps can preview "![[{{task}}]]".
+        const result = produce(ok(resolved), step, `${found.api.folder}/T-new.md`, vars);
+        result.note = `Would create task ${taskSummary(qa)}`;
+        return result;
+      }
+      try {
+        const path = await found.api.createTask(qa);
+        const result = produce(ok(resolved), step, path, vars);
+        result.note = `Created task “${qa.title}”`;
+        return result;
+      } catch (e) {
+        return failed(e instanceof Error ? e.message : String(e), resolved);
+      }
     }
     case "choice": {
       const value = await openChoiceModal(app, step.label, step.options);
