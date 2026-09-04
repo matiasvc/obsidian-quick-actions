@@ -1,0 +1,17 @@
+/* Iteration 3: inputs above the fields, outputs below. */
+.qa-io { border-radius: var(--radius-m); background: var(--background-primary-alt); padding: var(--size-4-2) var(--size-4-3); }
+.qa-io.is-in { margin: var(--size-4-2) 0 var(--size-4-1); }
+.qa-io.is-out { margin: var(--size-4-3) 0 0; }
+.qa-io-title { display: flex; align-items: center; gap: var(--size-4-1); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: var(--size-2-2); --icon-size: 13px; --icon-stroke: 2.2px; }
+.qa-io-title .hint { font-weight: var(--font-normal); text-transform: none; letter-spacing: 0; color: var(--text-faint); margin-inline-start: auto; }
+.qa-io-row { display: flex; align-items: center; gap: var(--size-4-2); padding: var(--size-2-2) 0; flex-wrap: wrap; }
+.qa-io-src { flex: 0 0 104px; font-size: var(--font-ui-smaller); color: var(--text-muted); display: inline-flex; align-items: center; gap: var(--size-2-2); --icon-size: 12px; --icon-stroke: 2px; }
+.qa-io-src.is-llm { color: var(--text-accent); }
+.qa-pill.is-unused { background: transparent; border: 1px solid var(--background-modifier-border-hover); color: var(--text-muted); }
+.qa-pill .tick { display: inline-flex; --icon-size: 10px; --icon-stroke: 3px; margin-inline-start: 1px; }
+.qa-io-empty { font-size: var(--font-ui-smaller); color: var(--text-faint); }
+.qa-out-row { display: flex; align-items: center; gap: var(--size-4-2); flex-wrap: wrap; }
+.qa-out-meta { font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.qa-rail3 { flex: 0 0 280px; }
+.qa-rail3 .qa-rail-item { height: 54px; }
+.qa-rail3 .qa-pill { font-size: 11px; line-height: 17px; }

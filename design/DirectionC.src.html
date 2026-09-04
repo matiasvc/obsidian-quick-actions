@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #1e1e1e; }
+    a { color: var(--text-accent); } a:hover { color: var(--text-accent-hover); }
+<!--OBSIDIAN_CSS-->
+<!--INCLUDE:_qa.css-->
+  </style>
+</helmet>
+<div style="--qa-h: 1180px;">
+<!--INCLUDE:_frame-top.html-->
+<!--INCLUDE:_actions-list.html-->
+            <div class="setting-item" style="flex-wrap: wrap; align-items: center; border-color: var(--background-modifier-border-hover);">
+              <div class="qa-grip">{{icon:grip-vertical}}</div>
+              <div class="setting-item-info" style="flex: 1 1 0; min-width: 0;">
+                <input type="text" value="Draft Slipbox Note" style="font-size: var(--font-ui-small); font-weight: var(--font-medium); background: transparent; box-shadow: none; padding-inline-start: 0; width: 320px; height: auto;">
+                <div class="qa-stepper">
+                  <span class="qa-chip">{{icon:text-cursor-input}}1 Prompt</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip is-selected">{{icon:sparkles}}2 Opus</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip is-llm">{{icon:sparkles}}3 Haiku</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:file-plus}}4 Create file</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:external-link}}5 Open file</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip is-add">{{icon:plus}}Add step</span>
+                </div>
+              </div>
+              <div class="setting-item-control" style="align-self: flex-start; flex: 0 0 auto;">
+                <button class="clickable-icon" aria-label="Copy URI">{{icon:link}}</button>
+                <button class="clickable-icon" aria-label="More">{{icon:ellipsis-vertical}}</button>
+                <button class="clickable-icon is-active" aria-label="Collapse">{{icon:chevron-down}}</button>
+              </div>
+              <div class="qa-inline">
+                <div class="qa-pane-header" style="margin-bottom: 0;">
+                  <span class="qa-num">2</span>
+                  <select class="dropdown"><option>LLM</option><option>Prompt</option><option>File picker</option><option>Tasks modal</option><option>Choice</option><option>Insert in section</option><option>Create file</option><option>Open file</option></select>
+                  <span class="qa-vars" style="margin-inline-start: var(--size-4-2);"><span class="qa-info-label">Available</span><span class="qa-var">{{date}}</span><span class="qa-var">{{time}}</span><span class="qa-var">{{timestamp}}</span><span class="qa-var">{{idea}}</span></span>
+                  <span style="flex: 1;"></span>
+                  <div class="qa-card-actions">
+                    <button class="clickable-icon" aria-label="Move up">{{icon:arrow-up}}</button>
+                    <button class="clickable-icon" aria-label="Move down">{{icon:arrow-down}}</button>
+                    <button class="clickable-icon" aria-label="Duplicate">{{icon:copy}}</button>
+                    <button class="clickable-icon" aria-label="Delete">{{icon:trash-2}}</button>
+                  </div>
+                </div>
+                <div class="qa-fields">
+                  <div class="setting-item">
+                    <div class="setting-item-info"><div class="setting-item-name">Model</div></div>
+                    <div class="setting-item-control"><select class="dropdown"><option>Opus</option><option>Sonnet</option><option>Haiku</option></select></div>
+                  </div>
+                  <div class="setting-item">
+                    <div class="setting-item-info"><div class="setting-item-name">Store response in</div><div class="setting-item-description">Later steps read it as <span class="qa-var">{{draft}}</span></div></div>
+                    <div class="setting-item-control"><input type="text" value="draft" style="width: 180px;"></div>
+                  </div>
+                  <div class="setting-item is-stacked">
+                    <div class="setting-item-info"><div class="setting-item-name">System prompt</div></div>
+                    <div class="setting-item-control"><textarea rows="5">You are helping draft a Zettelkasten permanent note (Slipbox note). Rewrite the rough idea as one clear, self-contained argument in the writer's own voice. Keep it under 200 words and do not add headings.</textarea></div>
+                  </div>
+                  <div class="setting-item is-stacked">
+                    <div class="setting-item-info"><div class="setting-item-name">User prompt</div></div>
+                    <div class="setting-item-control"><textarea rows="3">Rough idea:
+{{idea}}
+
+Draft the note body:</textarea></div>
+                  </div>
+                </div>
+                <div style="display: flex; justify-content: flex-end; padding-top: var(--size-4-1);"><span class="qa-info-label">Changes save as you type</span></div>
+              </div>
+            </div>
+            <div class="setting-item" style="align-items: center;">
+              <div class="qa-grip">{{icon:grip-vertical}}</div>
+              <div class="setting-item-info">
+                <div class="setting-item-name">Quick Reference Note</div>
+                <div class="qa-chain">
+                  <span class="qa-chip">{{icon:text-cursor-input}}Prompt</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip is-llm">{{icon:sparkles}}Sonnet</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip is-llm">{{icon:sparkles}}Opus</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip is-llm">{{icon:sparkles}}Sonnet</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip is-llm">{{icon:sparkles}}Haiku</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:file-plus}}Create file</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:external-link}}Open file</span>
+                </div>
+              </div>
+              <div class="setting-item-control">
+                <button class="clickable-icon" aria-label="Copy URI">{{icon:link}}</button>
+                <button class="clickable-icon" aria-label="More">{{icon:ellipsis-vertical}}</button>
+                <button class="clickable-icon" aria-label="Expand">{{icon:chevron-right}}</button>
+              </div>
+            </div>
+            <div class="setting-item" style="align-items: center;">
+              <div class="qa-grip">{{icon:grip-vertical}}</div>
+              <div class="setting-item-info">
+                <div class="setting-item-name">Add to Log</div>
+                <div class="qa-chain">
+                  <span class="qa-chip">{{icon:file}}File picker</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:text-cursor-input}}Prompt</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:between-horizontal-start}}Insert in section</span>
+                </div>
+              </div>
+              <div class="setting-item-control">
+                <button class="clickable-icon" aria-label="Copy URI">{{icon:link}}</button>
+                <button class="clickable-icon" aria-label="More">{{icon:ellipsis-vertical}}</button>
+                <button class="clickable-icon" aria-label="Expand">{{icon:chevron-right}}</button>
+              </div>
+            </div>
+            <div class="setting-item" style="align-items: center;">
+              <div class="qa-grip">{{icon:grip-vertical}}</div>
+              <div class="setting-item-info">
+                <div class="setting-item-name">Journal Entry</div>
+                <div class="qa-chain">
+                  <span class="qa-chip">{{icon:text-cursor-input}}Prompt</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:file-plus}}Create file</span>
+                </div>
+              </div>
+              <div class="setting-item-control">
+                <button class="clickable-icon" aria-label="Copy URI">{{icon:link}}</button>
+                <button class="clickable-icon" aria-label="More">{{icon:ellipsis-vertical}}</button>
+                <button class="clickable-icon" aria-label="Expand">{{icon:chevron-right}}</button>
+              </div>
+            </div>
+<!--INCLUDE:_frame-bottom.html-->
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

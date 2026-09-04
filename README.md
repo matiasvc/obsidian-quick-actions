@@ -2,111 +2,110 @@
 
 Configurable quick actions for common vault operations. Build custom commands from composable steps.
 
-![Settings overview showing configured models and actions](screenshots/settings-overview.png)
-
 ## Features
 
-- **Composable step pipelines** - chain multiple steps into a single command
-- **Template variables** - use `{{date}}`, `{{time}}`, `{{timestamp}}`, and step output variables in any field
-- **LLM integration** - call Anthropic or OpenAI models as pipeline steps, with output available to downstream steps
-- **Multiple named models** - configure several LLM models and choose per-step which to use
-- **File creation and editing** - create new files or insert content into specific sections of existing files
-- **Interactive inputs** - prompt the user for text, pick files from folders, or present choice menus
-- **Auto-registered commands** - every action becomes an Obsidian command, accessible via the command palette or hotkeys
-- **Mobile support** - works on both desktop and mobile
+- **Composable step pipelines** - chain steps into a single command
+- **Visible data flow** - every step shows what it can use from the steps above it and what it hands down; variables are pills, not text you have to remember
+- **Test runs** - run an action up to any step with real prompts and models, see every captured value, and write nothing
+- **LLM integration** - call Anthropic or OpenAI models as steps, with the reply available to later steps
+- **Multiple named models** - configure several models and choose per step which to use
+- **File creation and editing** - create new files or insert text under a heading in an existing file
+- **Interactive inputs** - ask for text, pick a file from a folder, or present a list of options
+- **Auto-registered commands** - every action becomes an Obsidian command, reachable from the command palette, a hotkey, or its URI
+- **Mobile support** - works on desktop and mobile (the pill editor falls back to a plain text field on mobile)
 
-## Step Types
+## Step types
 
-| Step | Description |
-|------|-------------|
-| **Prompt** | Ask the user for text input (single-line or multi-line) |
-| **File Picker** | Let the user pick a markdown file from a folder |
-| **Tasks Modal** | Open the [Tasks plugin](https://github.com/obsidian-tasks-group/obsidian-tasks) modal to create a task line (requires Tasks plugin) |
-| **Insert in Section** | Append or prepend text to a heading section in a file |
-| **Create File** | Create a new markdown file with templated content |
-| **Choice** | Present a list of options for the user to pick from |
-| **Open File** | Open a file in the editor, optionally scrolling to a section |
-| **LLM** | Send a prompt to an LLM and store the response in a variable |
+Steps are grouped by what they do. Steps that produce a value name their output; later steps use it as `{{name}}`.
 
-## Template Variables
+| Group | Step | What it does | Output |
+|---|---|---|---|
+| Ask | **Ask me** | A question with a text box (single or multi-line) | text |
+| Ask | **Choice** | Pick one option from a list | text |
+| Ask | **Pick a file** | Choose a note from a folder | file |
+| Ask | **Tasks modal** | Build a task line with the [Tasks plugin](https://github.com/obsidian-tasks-group/obsidian-tasks) modal (requires Tasks) | text |
+| Generate | **Ask a model** | Send a system and user prompt to a configured model, keep the reply | text |
+| Do | **Create file** | Write a new note from a templated path and content | file |
+| Do | **Insert in section** | Add text under a heading in a note, at the start or end of the section | nothing |
+| Do | **Open file** | Open a note, optionally scrolled to a heading | nothing |
 
-All text fields (file paths, content, prompts) support `{{variable}}` substitution.
+A `file` output is a vault path. **Insert in section** and **Open file** take a file as their target, so a `Create file` step followed by `Open file` with target `{{note}}` opens the note that was just created.
+
+## Variables
+
+Every templated field (paths, content, prompts, targets, sections) accepts `{{name}}`. In the editor these render as pills. Type `{{` to pick from what is available at that step, click a pill in the **In** band to insert it at the caret, or press the `{ }` button. Pills that nothing above produces render red.
 
 **Built-in variables** (available in every step):
 
 | Variable | Value |
-|----------|-------|
+|---|---|
 | `{{date}}` | Current date as `YYYY-MM-DD` |
 | `{{time}}` | Current time as `HH:mm` |
 | `{{timestamp}}` | Current timestamp as `YYYYMMDDHHmmss` |
 
-**Step variables** - each input step (Prompt, File Picker, Tasks Modal, Choice, LLM) stores its result in a named variable that downstream steps can reference. For example, a Prompt step with variable `idea` makes `{{idea}}` available to all subsequent steps.
+**Step outputs** - each producing step names its output in the **Out** band. Click the name to rename it; every later use is rewritten. Names must be a single word (letters, digits, underscores) that no other step produces.
 
-## LLM Integration
+## The action editor
 
-Quick Actions can call LLM APIs as pipeline steps, letting you build AI-assisted workflows entirely within Obsidian.
+The editor is a two-pane modal: the steps on the left, the selected step on the right.
 
-### Setting Up Models
+- **In band** - every value this step could use. Tinted pills are used by this step, outlined ones are available, blue ones are files.
+- **Fields** - what the step needs. Templated fields hold pills.
+- **Out band** - what this step produces, and which later steps use it.
+- **Add step** - a grouped picker (Ask, Generate, Do). Steps reorder by drag or from the `⋯` menu.
+- **Test run** / **Run to here** - runs the steps up to the selected one. Prompts and models are real, nothing is written to the vault. The rail shows each captured value, and the **Last run** view of a step shows the prompt that was sent with every substituted value marked, what it produced, and what the next step would create. **Run step N too** continues the same run without asking again. **Discard run** returns to editing.
+- **Save** (or Cmd-Enter) writes the action; **Cancel** discards every change.
 
-1. Go to **Settings > Quick Actions > Models** and click **+ Add Model**
-2. Choose a **Provider** (Anthropic or OpenAI)
-3. Enter the **Model ID** (e.g., `claude-sonnet-4-6`, `gpt-4o`)
-4. Set an **API Key Secret ID** - this references a secret stored in Obsidian's built-in Keychain (Settings > Keychain)
+## LLM integration
 
-You can configure multiple models (e.g., a fast model for classification, a capable model for drafting) and select which model each LLM step uses.
+### Setting up models
 
-### Supported Providers
+1. Store the API key in **Settings > Keychain**.
+2. Go to **Settings > Quick Actions > Models** and click **Add model**.
+3. Give it a name (this is what steps show), choose a provider, enter the model ID, and pick the Keychain secret.
+4. Press **Test** to confirm the key and model ID; the reply time and model ID appear inline, or the provider's error.
 
-| Provider | API | Auth Header |
-|----------|-----|-------------|
+Several models can be configured (a fast one for classification, a capable one for drafting) and each **Ask a model** step picks one. A step with no model set uses the first one.
+
+### Supported providers
+
+| Provider | API | Auth header |
+|---|---|---|
 | **Anthropic** | Messages API (`/v1/messages`) | `x-api-key` |
 | **OpenAI** | Chat Completions API (`/v1/chat/completions`) | `Authorization: Bearer` |
 
-### Using LLM Steps
+## Starters
 
-Each LLM step has:
-- **Model** - which configured model to use (defaults to the first model if unset)
-- **System prompt** - sets the LLM's behavior and instructions
-- **User prompt** - the input to the LLM, typically containing `{{variables}}` from prior steps
-- **Variable name** - where to store the LLM's response for downstream steps
-
-LLM steps can be chained: one step drafts content, another generates a title, a third classifies it - all feeding into a final Create File step.
+An empty settings page offers three starters that open a prefilled editor: **Capture a note** (ask, create a note, open it), **Append to a log** (pick a log, ask for an entry, insert it under a heading), and **Draft with a model** (ask for an idea, have a model draft it, save and open the draft). Nothing is stored until you save.
 
 ## Examples
 
 ### Capture Fleeting Note
 
-A two-step action: prompt for a thought, then create a timestamped file in the Inbox.
+| Step | Type | Details |
+|---|---|---|
+| 1 | Ask me | "Fleeting thought:", multi-line, output `thought` |
+| 2 | Create file | Path `Inbox/F-{{timestamp}}`, content includes `{{thought}}`, output `note` |
+| 3 | Open file | Target `{{note}}` |
+
+### Draft Slipbox Note
 
 | Step | Type | Details |
-|------|------|---------|
-| 1 | Prompt | Label: "Fleeting thought:", multi-line, variable: `thought` |
-| 2 | Create File | Path: `Inbox/F-{{timestamp}}`, content includes `{{thought}}` |
+|---|---|---|
+| 1 | Ask me | "Rough idea or observation:", multi-line, output `idea` |
+| 2 | Ask a model (Opus) | Drafts the note body from `{{idea}}`, output `draft` |
+| 3 | Ask a model (Haiku) | Generates a short title from `{{draft}}` and `{{idea}}`, output `title` |
+| 4 | Create file | Path `Slipbox/{{timestamp}} - {{title}}`, content uses `{{title}}`, `{{draft}}`, `{{idea}}`, output `note` |
+| 5 | Open file | Target `{{note}}`, scrolled to `## Description` |
 
-### Log in Daily Note
+## Development
 
-Append a timestamped entry to today's daily note, creating it from a template if it doesn't exist.
-
-| Step | Type | Details |
-|------|------|---------|
-| 1 | Prompt | Label: "Entry:", variable: `entry` |
-| 2 | Insert in Section | Target: `Journal/Daily/D-{{date}}`, section: `## Log`, format: `({{time}}) {{entry}}`, create if missing from template |
-
-### Draft Slipbox Note (LLM-powered)
-
-A five-step action that takes a rough idea, uses an LLM to draft a polished note body and generate a title, creates the file, and opens it.
-
-| Step | Type | Details |
-|------|------|---------|
-| 1 | Prompt | "Rough idea or observation:", multi-line, variable: `idea` |
-| 2 | LLM (Opus) | Drafts the note body from `{{idea}}`, variable: `draft` |
-| 3 | LLM (Haiku) | Generates a short title from `{{draft}}` and `{{idea}}`, variable: `title` |
-| 4 | Create File | Path: `Slipbox/{{timestamp}} - {{title}}`, content uses `{{title}}`, `{{draft}}`, `{{idea}}` |
-| 5 | Open File | Opens the newly created note |
-
-![Action editor showing the Draft Slipbox Note pipeline](screenshots/action-editor.png)
-
-![Prompt modal asking for input when running an action](screenshots/prompt-modal.png)
+```bash
+npm install
+npm run build   # bundle to main.js
+npm run lint    # eslint with the obsidianmd rules
+npm test        # unit tests for the pure modules (variables, step table)
+```
 
 ## Installation
 
@@ -120,10 +119,6 @@ npm run build
 ```
 
 Then copy `main.js`, `manifest.json`, and `styles.css` to your vault's `.obsidian/plugins/obsidian-quick-actions/` directory and enable the plugin in Settings > Community plugins.
-
-### Community Plugin
-
-Search for "Quick Actions" in Settings > Community plugins > Browse (when available).
 
 ## License
 

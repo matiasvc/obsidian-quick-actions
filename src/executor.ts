@@ -1,24 +1,83 @@
-import { App, Notice, TFile, requestUrl } from "obsidian";
-import { Action, Step, ModelConfig } from "./types";
+import { App, Notice, TFile } from "obsidian";
+import { Action, Step, ModelConfig, OutputType } from "./types";
+import { STEP_DEFS } from "./steps";
+import { resolveTemplate } from "./variables";
+import { callLLM, findModel } from "./llm";
 import { openPromptModal, openFilePickerModal, openChoiceModal } from "./modals";
 
 declare const window: Window & { moment: typeof import("moment") };
 
-export async function executeAction(app: App, action: Action, models: ModelConfig[]): Promise<void> {
-  try {
-    const vars = getBuiltinVars();
+export interface RunOptions {
+  write: boolean; // false = dry run: prompts and models run, the vault is never written
+  from?: number; // first step index, default 0
+  to?: number; // exclusive end, default all steps
+  vars?: Record<string, string>; // values captured by an earlier run, on top of the built-ins
+}
 
-    for (const step of action.steps) {
-      const cancelled = await executeStep(app, step, vars, models);
-      if (cancelled) return;
+export interface StepResult {
+  index: number;
+  status: "ok" | "skipped" | "cancelled" | "failed";
+  resolved: Record<string, string>; // templated fields after substitution
+  unresolved: string[]; // names left verbatim in the resolved fields
+  output?: { name: string; type: OutputType; value: string };
+  note?: string; // what happened, or would have happened in a dry run
+  error?: string;
+  ms: number;
+}
+
+export interface RunResult {
+  steps: StepResult[];
+  vars: Record<string, string>;
+  status: "ok" | "cancelled" | "failed";
+  ms: number;
+}
+
+// Runs the step pipeline. Mutates and returns vars so a later run can continue from them.
+export async function runAction(app: App, action: Action, models: ModelConfig[], opts: RunOptions): Promise<RunResult> {
+  const vars = { ...getBuiltinVars(), ...(opts.vars ?? {}) };
+  const from = opts.from ?? 0;
+  const to = Math.min(opts.to ?? action.steps.length, action.steps.length);
+  const results: StepResult[] = [];
+  const start = Date.now();
+  let status: RunResult["status"] = "ok";
+
+  for (let i = from; i < to; i++) {
+    const step = action.steps[i];
+    const stepStart = Date.now();
+    let result: StepResult;
+    try {
+      result = await executeStep(app, step, vars, models, opts.write);
+    } catch (e) {
+      result = { index: i, status: "failed", resolved: {}, unresolved: [], error: String(e), ms: 0 };
     }
-  } catch (e) {
-    console.error(`Quick Actions "${action.name}" failed:`, e);
-    new Notice(`Action "${action.name}" failed: ${e}`);
+    result.index = i;
+    result.ms = Date.now() - stepStart;
+    result.unresolved = unresolvedIn(result.resolved);
+    results.push(result);
+    if (result.status === "cancelled") {
+      status = "cancelled";
+      break;
+    }
+    if (result.status === "failed") {
+      status = "failed";
+      break;
+    }
+  }
+  return { steps: results, vars, status, ms: Date.now() - start };
+}
+
+// The command-palette entry point: a full run that writes, reporting through Notices.
+export async function executeAction(app: App, action: Action, models: ModelConfig[]): Promise<void> {
+  const run = await runAction(app, action, models, { write: true });
+  for (const r of run.steps) {
+    if (r.note) new Notice(r.note);
+    if (r.error) {
+      console.error(`Quick Actions "${action.name}" step ${r.index + 1} failed:`, r.error);
+      new Notice(`Action "${action.name}" failed: ${r.error}`);
+    }
   }
 }
 
-// Initialize the built-in variables.
 export function getBuiltinVars(): Record<string, string> {
   const now = window.moment();
   return {
@@ -26,6 +85,14 @@ export function getBuiltinVars(): Record<string, string> {
     time: now.format("HH:mm"),
     timestamp: now.format("YYYYMMDDHHmmss"),
   };
+}
+
+function unresolvedIn(resolved: Record<string, string>): string[] {
+  const names: string[] = [];
+  for (const v of Object.values(resolved)) {
+    for (const m of v.matchAll(/\{\{(\w+)\}\}/g)) if (!names.includes(m[1])) names.push(m[1]);
+  }
+  return names;
 }
 
 interface TasksPluginApi {
@@ -39,90 +106,115 @@ interface ViewWithScroll {
   currentMode?: { applyScroll?: (line: number) => void };
 }
 
-// Adds a `.md` file extension if the path doesnt have it already.
 function ensureMdExtension(path: string): string {
   if (!path.endsWith(".md")) return path + ".md";
   return path;
 }
 
-// Substitutes {{variable}} placeholders in a template string with values from vars.
-// Unknown variables are left as-is.
-function resolveTemplate(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (match, name) => {
-    return vars[name] !== undefined ? vars[name] : match;
-  });
+function ok(resolved: Record<string, string> = {}): StepResult {
+  return { index: -1, status: "ok", resolved, unresolved: [], ms: 0 };
 }
 
+function cancelled(note?: string): StepResult {
+  return { index: -1, status: "cancelled", resolved: {}, unresolved: [], note, ms: 0 };
+}
 
-// Returns true if the action should be cancelled
-async function executeStep(app: App, step: Step, vars: Record<string, string>, models: ModelConfig[]): Promise<boolean> {
+function failed(error: string, resolved: Record<string, string> = {}): StepResult {
+  return { index: -1, status: "failed", resolved, unresolved: [], error, ms: 0 };
+}
+
+function produce(result: StepResult, step: Step & { variable: string }, value: string, vars: Record<string, string>): StepResult {
+  vars[step.variable] = value;
+  result.output = { name: step.variable, type: STEP_DEFS[step.type].output ?? "text", value };
+  return result;
+}
+
+async function executeStep(app: App, step: Step, vars: Record<string, string>, models: ModelConfig[], write: boolean): Promise<StepResult> {
   switch (step.type) {
     case "prompt": {
-      const result = await openPromptModal(app, step.label, step.multiline);
-      if (result === null) return true;
-      vars[step.variable] = result;
-      return false;
+      const value = await openPromptModal(app, step.label, step.multiline);
+      if (value === null) return cancelled();
+      return produce(ok(), step, value, vars);
     }
     case "file_picker": {
       const folder = resolveTemplate(step.folder, vars);
-      const result = await openFilePickerModal(app, folder);
-      if (result === null) {
-        new Notice("No files found or selection cancelled");
-        return true;
-      }
-      vars[step.variable] = result;
-      return false;
+      const value = await openFilePickerModal(app, folder);
+      if (value === null) return cancelled("No files found or selection cancelled");
+      return produce(ok({ folder }), step, value, vars);
     }
     case "tasks_modal": {
       const tasksPlugin = (app as unknown as ObsidianAppInternal).plugins?.plugins?.["obsidian-tasks-plugin"];
-      if (!tasksPlugin?.apiV1?.createTaskLineModal) {
-        new Notice("Tasks plugin not available");
-        return true;
-      }
+      if (!tasksPlugin?.apiV1?.createTaskLineModal) return failed("Tasks plugin not available");
       const taskLine = await tasksPlugin.apiV1.createTaskLineModal();
-      if (!taskLine) return true;
-      vars[step.variable] = taskLine;
-      return false;
+      if (!taskLine) return cancelled();
+      return produce(ok(), step, taskLine, vars);
     }
-    case "insert_in_section": {
-      const target = ensureMdExtension(resolveTemplate(step.target, vars));
-      const section = resolveTemplate(step.section, vars);
-      const text = resolveTemplate(step.format, vars);
-      const templatePath = resolveTemplate(step.templatePath, vars);
-      await insertInSection(app, target, section, step.position, text, step.createIfMissing, templatePath);
-      return false;
+    case "choice": {
+      const value = await openChoiceModal(app, step.label, step.options);
+      if (value === null) return cancelled();
+      return produce(ok(), step, value, vars);
+    }
+    case "llm": {
+      const config = findModel(models, step.model);
+      if (!config) return failed(`Model "${step.model || "(none)"}" not configured`);
+      const resolved = { system_prompt: resolveTemplate(step.system_prompt, vars), user_prompt: resolveTemplate(step.user_prompt, vars) };
+      const apiKey = app.secretStorage.getSecret(config.secret_id);
+      if (!apiKey) return failed(`No secret named "${config.secret_id}" for model ${config.name}`, resolved);
+      const notice = new Notice(`Generating ${step.variable}...`, 0);
+      try {
+        const reply = await callLLM(config.provider, config.model, apiKey, resolved.system_prompt, resolved.user_prompt);
+        return produce(ok(resolved), step, reply, vars);
+      } catch (e) {
+        return failed(`${config.name}: ${e instanceof Error ? e.message : String(e)}`, resolved);
+      } finally {
+        notice.hide();
+      }
     }
     case "create_file": {
       const path = ensureMdExtension(resolveTemplate(step.path, vars));
       const content = resolveTemplate(step.content, vars);
-      const existing = app.vault.getAbstractFileByPath(path);
-      if (existing) {
-        new Notice(`File already exists: ${path}`);
-        return false;
+      const resolved = { path, content };
+      const result = produce(ok(resolved), step, path, vars);
+      if (app.vault.getAbstractFileByPath(path)) {
+        result.note = `File already exists: ${path}`;
+        return result;
+      }
+      if (!write) {
+        result.note = `Would create ${path}`;
+        return result;
       }
       await app.vault.create(path, content);
-      new Notice(`Created ${path}`);
-      return false;
+      result.note = `Created ${path}`;
+      return result;
     }
-    case "choice": {
-      const result = await openChoiceModal(app, step.label, step.options);
-      if (result === null) return true;
-      vars[step.variable] = result;
-      return false;
+    case "insert_in_section": {
+      const resolved = {
+        target: ensureMdExtension(resolveTemplate(step.target, vars)),
+        section: resolveTemplate(step.section, vars),
+        format: resolveTemplate(step.format, vars),
+        templatePath: resolveTemplate(step.templatePath, vars),
+      };
+      const plan = await planInsert(app, resolved.target, resolved.section, step.position, step.createIfMissing, resolved.templatePath);
+      if ("error" in plan) return failed(plan.error, resolved);
+      const result = ok(resolved);
+      const where = `${plan.lines.length ? "line " + (plan.insertAt + 1) : "top"} of ${resolved.target}`;
+      if (!write) {
+        result.note = plan.file ? `Would insert at ${where}` : `Would create ${resolved.target} and insert at ${where}`;
+        return result;
+      }
+      await writeInsert(app, plan, resolved.format);
+      result.note = `Updated ${resolved.target}`;
+      return result;
     }
     case "open_file": {
-      const target = ensureMdExtension(resolveTemplate(step.target, vars));
-      const file = app.vault.getAbstractFileByPath(target);
-      if (!file || !(file instanceof TFile)) {
-        new Notice(`File not found: ${target}`);
-        return false;
-      }
+      const resolved = { target: ensureMdExtension(resolveTemplate(step.target, vars)), section: resolveTemplate(step.section, vars) };
+      if (!write) return { ...ok(resolved), status: "skipped", note: "Not run" };
+      const file = app.vault.getAbstractFileByPath(resolved.target);
+      if (!(file instanceof TFile)) return failed(`File not found: ${resolved.target}`, resolved);
       const leaf = app.workspace.getLeaf(false);
       await leaf.openFile(file);
-
-      if (step.section) {
-        const section = resolveTemplate(step.section, vars);
-        const headingText = section.replace(/^#+\s*/, "");
+      if (resolved.section) {
+        const headingText = resolved.section.replace(/^#+\s*/, "");
         const cache = app.metadataCache.getFileCache(file);
         const heading = cache?.headings?.find((h) => h.heading === headingText);
         if (heading) {
@@ -130,169 +222,76 @@ async function executeStep(app: App, step: Step, vars: Record<string, string>, m
           view?.currentMode?.applyScroll?.(heading.position.start.line);
         }
       }
-      return false;
-    }
-    case "llm": {
-      const config = step.model
-        ? models.find(m => m.name === step.model)
-        : models[0];
-      if (!config) {
-        new Notice(`LLM model "${step.model || "(none)"}" not configured.`);
-        return true;
-      }
-
-      const systemPrompt = resolveTemplate(step.system_prompt, vars);
-      const userPrompt = resolveTemplate(step.user_prompt, vars);
-
-      const apiKey = app.secretStorage.getSecret(config.secret_id);
-      if (!apiKey) {
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "LLM" is an acronym, not a capitalized proper noun
-        new Notice("LLM API key not configured. Set it in plugin settings.");
-        return true;
-      }
-
-      const notice = new Notice(`Generating ${step.variable}...`, 0);
-      const result = await callLLM(config.provider, config.model, apiKey, systemPrompt, userPrompt);
-      notice.hide();
-      if (result === null) {
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "LLM" is an acronym, not a capitalized proper noun
-        new Notice("LLM request failed");
-        return true;
-      }
-      vars[step.variable] = result;
-      return false;
+      return ok(resolved);
     }
   }
 }
 
-async function insertInSection(
+export interface InsertPlan {
+  path: string;
+  file: TFile | null; // null when the file does not exist yet and will be created
+  initial: string; // content of a file to be created
+  lines: string[];
+  insertAt: number;
+}
+
+// Locates where the text would go. Reads the vault, never writes it.
+export async function planInsert(
   app: App,
   targetPath: string,
   section: string,
   position: "beginning" | "end",
-  text: string,
   createIfMissing: boolean,
   templatePath: string,
-): Promise<void> {
-  let file = app.vault.getAbstractFileByPath(targetPath);
-
-  // Create file from template if missing
-  if (!file && createIfMissing) {
-    try {
-      if (templatePath) {
-        const templateFile = app.vault.getAbstractFileByPath(ensureMdExtension(templatePath));
-        if (templateFile && templateFile instanceof TFile) {
-          const templateContent = await app.vault.read(templateFile);
-          file = await app.vault.create(targetPath, templateContent);
-        } else {
-          new Notice(`Template not found: ${templatePath}`);
-          return;
-        }
-      } else {
-        file = await app.vault.create(targetPath, section + "\n");
-      }
-    } catch (e) {
-      new Notice(`Failed to create file: ${e}`);
-      return;
-    }
-  }
-
-  if (!file || !(file instanceof TFile)) {
-    new Notice(`File not found: ${targetPath}`);
-    return;
-  }
-
-  const content = await app.vault.read(file);
-  const lines = content.split("\n");
-
-  // Find the section heading
-  const sectionLevel = section.match(/^(#+)/)?.[1].length ?? 1;
-  let sectionIndex = -1;
-
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trimEnd() === section) {
-      sectionIndex = i;
-      break;
-    }
-  }
-
-  if (sectionIndex === -1) {
-    new Notice(`Section "${section}" not found in ${targetPath}`);
-    return;
-  }
-
-  let insertIndex: number;
-
-  if (position === "beginning") {
-    // Insert right after the heading line
-    insertIndex = sectionIndex + 1;
+): Promise<InsertPlan | { error: string }> {
+  const existing = app.vault.getAbstractFileByPath(targetPath);
+  let file: TFile | null = null;
+  let content: string;
+  if (existing instanceof TFile) {
+    file = existing;
+    content = await app.vault.read(file);
+  } else if (existing) {
+    return { error: `Not a file: ${targetPath}` };
+  } else if (!createIfMissing) {
+    return { error: `File not found: ${targetPath}` };
+  } else if (templatePath) {
+    const template = app.vault.getAbstractFileByPath(ensureMdExtension(templatePath));
+    if (!(template instanceof TFile)) return { error: `Template not found: ${templatePath}` };
+    content = await app.vault.read(template);
   } else {
-    // Insert at end of section: before next same-or-higher-level heading, or end of file
-    insertIndex = lines.length;
+    content = section + "\n";
+  }
+
+  const lines = content.split("\n");
+  const sectionLevel = section.match(/^(#+)/)?.[1].length ?? 1;
+  const sectionIndex = lines.findIndex((l) => l.trimEnd() === section);
+  if (sectionIndex === -1) return { error: `Section "${section}" not found in ${targetPath}` };
+
+  let insertAt: number;
+  if (position === "beginning") {
+    insertAt = sectionIndex + 1;
+  } else {
+    // Before the next heading of the same or higher level, or the end of the file,
+    // skipping trailing blank lines so the entry sits right after the content.
+    insertAt = lines.length;
     for (let i = sectionIndex + 1; i < lines.length; i++) {
       const headingMatch = lines[i].match(/^(#+)\s/);
       if (headingMatch && headingMatch[1].length <= sectionLevel) {
-        insertIndex = i;
+        insertAt = i;
         break;
       }
     }
-    // Skip blank lines backwards so entry sits right after section content
-    while (insertIndex > sectionIndex + 1 && lines[insertIndex - 1].trim() === "") {
-      insertIndex--;
-    }
+    while (insertAt > sectionIndex + 1 && lines[insertAt - 1].trim() === "") insertAt--;
   }
-
-  lines.splice(insertIndex, 0, text);
-  await app.vault.modify(file, lines.join("\n"));
-  new Notice(`Updated ${file.basename}`);
+  return { path: targetPath, file, initial: content, lines, insertAt };
 }
 
-async function callLLM(
-  provider: "openai" | "anthropic",
-  model: string,
-  apiKey: string,
-  systemPrompt: string,
-  userPrompt: string,
-): Promise<string | null> {
-  try {
-    if (provider === "openai") {
-      const resp = await requestUrl({
-        url: "https://api.openai.com/v1/chat/completions",
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
-            { role: "user", content: userPrompt },
-          ],
-        }),
-      });
-      return resp.json.choices[0].message.content;
-    } else {
-      const resp = await requestUrl({
-        url: "https://api.anthropic.com/v1/messages",
-        method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: 4096,
-          ...(systemPrompt ? { system: systemPrompt } : {}),
-          messages: [{ role: "user", content: userPrompt }],
-        }),
-      });
-      return resp.json.content[0].text;
-    }
-  } catch (e) {
-    console.error("Quick Actions LLM error:", e);
-    return null;
+export async function writeInsert(app: App, plan: InsertPlan, text: string): Promise<void> {
+  const lines = [...plan.lines];
+  lines.splice(plan.insertAt, 0, text);
+  if (plan.file) {
+    await app.vault.modify(plan.file, lines.join("\n"));
+  } else {
+    await app.vault.create(plan.path, lines.join("\n"));
   }
 }

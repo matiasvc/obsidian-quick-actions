@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #1e1e1e; }
+    a { color: var(--text-accent); } a:hover { color: var(--text-accent-hover); }
+<!--OBSIDIAN_CSS-->
+<!--INCLUDE:_qa.css-->
+<!--INCLUDE:_qa2.css-->
+<!--INCLUDE:_qa4.css-->
+  </style>
+</helmet>
+<!--INCLUDE:_editor-top.html-->
+<!--INCLUDE:_look-head.html-->
+          <div class="qa-split l2">
+            <div class="qa-rail" style="flex-basis: 272px;">
+              <div class="qa-section-label">Steps</div>
+              <div class="qa-rail-item"><span class="qa-num">1</span><div class="qa-rail-text"><div class="qa-rail-title">Ask me</div><div class="qa-rail-sub">Rough idea or observation:</div></div><span class="qp is-mono is-off">idea</span></div>
+              <div class="qa-rail-item"><span class="qa-num">2</span><div class="qa-rail-text"><div class="qa-rail-title">Opus</div><div class="qa-rail-sub">Draft the note body</div></div><span class="qp is-mono is-off">draft</span></div>
+              <div class="qa-rail-item is-active"><span class="qa-num">3</span><div class="qa-rail-text"><div class="qa-rail-title">Haiku</div><div class="qa-rail-sub">Short title</div></div><span class="qp is-mono is-off">title</span></div>
+              <div class="qa-rail-item"><span class="qa-num">4</span><div class="qa-rail-text"><div class="qa-rail-title">Create file</div><div class="qa-rail-sub">Slipbox/{{timestamp}} - {{title}}</div></div><span class="qp is-mono is-off">note</span></div>
+              <div class="qa-rail-item"><span class="qa-num">5</span><div class="qa-rail-text"><div class="qa-rail-title">Open file</div><div class="qa-rail-sub">note at ## Description</div></div></div>
+              <div style="padding: var(--size-4-2) var(--size-4-2) 0;"><button class="qa-add-step">{{icon:plus}}Add step</button></div>
+            </div>
+            <div class="qa-pane">
+              <div class="qa-pane-header">
+                <span class="qa-num">3</span>
+                <select class="dropdown"><option>Ask a model</option><option>Ask me</option><option>Pick a file</option><option>Tasks modal</option><option>Choice</option><option>Insert in section</option><option>Create file</option><option>Open file</option></select>
+                <span style="flex: 1;"></span>
+                <div class="qa-card-actions">
+                  <button class="clickable-icon" aria-label="Move up">{{icon:arrow-up}}</button>
+                  <button class="clickable-icon" aria-label="Move down">{{icon:arrow-down}}</button>
+                  <button class="clickable-icon" aria-label="Duplicate">{{icon:copy}}</button>
+                  <button class="clickable-icon" aria-label="Delete">{{icon:trash-2}}</button>
+                </div>
+              </div>
+              <div class="qa-fields">
+                <div class="setting-item">
+                  <div class="setting-item-info"><div class="setting-item-name">Inputs</div><div class="setting-item-description">From the steps above, plus date, time and timestamp. Click one to insert it.</div></div>
+                  <div class="setting-item-control"><div class="l2-pills"><span class="qp is-mono">idea</span><span class="qp is-mono">draft</span><span class="qp is-mono is-off">date</span><span class="qp is-mono is-off">time</span><span class="qp is-mono is-off">timestamp</span></div></div>
+                </div>
+                <div class="setting-item">
+                  <div class="setting-item-info"><div class="setting-item-name">Model</div></div>
+                  <div class="setting-item-control"><select class="dropdown"><option>Haiku</option><option>Sonnet</option><option>Opus</option></select></div>
+                </div>
+                <div class="setting-item is-stacked">
+                  <div class="setting-item-info"><div class="setting-item-name">System prompt</div></div>
+                  <div class="setting-item-control"><div class="qa-field" style="width: 100%; min-height: 64px; padding-inline-end: var(--size-4-3);">Generate a short title for a Zettelkasten note. Keep it under 8 words, no quotes, no trailing period.</div></div>
+                </div>
+                <div class="setting-item is-stacked">
+                  <div class="setting-item-info"><div class="setting-item-name">User prompt</div></div>
+                  <div class="setting-item-control"><div class="qa-field" style="width: 100%; padding-inline-end: var(--size-4-3);">Note body:
+<span class="qp is-mono">draft</span>
+
+Original idea:
+<span class="qp is-mono">idea</span></div></div>
+                </div>
+                <div class="setting-item">
+                  <div class="setting-item-info"><div class="setting-item-name">Produces</div><div class="setting-item-description">Later steps use it as <span class="qp is-mono">title</span> · used by Create file</div></div>
+                  <div class="setting-item-control"><input type="text" value="title" style="width: 160px; font-family: var(--font-monospace); font-size: 12px;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<!--INCLUDE:_editor-bottom.html-->
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #1e1e1e; }
+    a { color: var(--text-accent); } a:hover { color: var(--text-accent-hover); }
+<!--OBSIDIAN_CSS-->
+<!--INCLUDE:_qa.css-->
+<!--INCLUDE:_qa2.css-->
+<!--INCLUDE:_qa3.css-->
+    .RAIL4 { background: var(--background-modifier-hover); }
+  </style>
+</helmet>
+<div style="--qa-h: 900px;">
+<!--INCLUDE:_frame-top.html-->
+<!--INCLUDE:_actions-list.html-->
+<!--INCLUDE:_frame-bottom.html-->
+    <div class="modal-container mod-dim" style="z-index: 100;">
+      <div class="modal-bg"></div>
+      <div class="modal qa-editor" style="--dialog-width: 1000px; height: 820px;">
+        <div class="modal-close-button clickable-icon">{{icon:x}}</div>
+        <div class="modal-content" style="display: flex; flex-direction: column; min-height: 0;">
+          <div style="display: flex; align-items: center; gap: var(--size-4-3);">
+            <input type="text" value="Draft Slipbox Note" style="font-size: var(--font-ui-large); font-weight: var(--font-semibold); background: transparent; box-shadow: none; padding-inline-start: 0; width: 360px;">
+            <span style="flex: 1;"></span>
+            <button class="qa-add-step">{{icon:play}}Test run</button>
+            <button class="clickable-icon" aria-label="Copy URI">{{icon:link}}</button>
+          </div>
+          <div class="qa-split">
+<!--INCLUDE:_rail3.html-->
+            <div class="qa-pane">
+              <div class="qa-pane-header">
+                <span class="qa-num">4</span>
+                <select class="dropdown"><option>Create file</option><option>Ask me (Prompt)</option><option>Ask a model (LLM)</option><option>Pick a file</option><option>Tasks modal</option><option>Choice</option><option>Insert in section</option><option>Open file</option></select>
+                <span style="flex: 1;"></span>
+                <div class="qa-card-actions">
+                  <button class="clickable-icon" aria-label="Move up">{{icon:arrow-up}}</button>
+                  <button class="clickable-icon" aria-label="Move down">{{icon:arrow-down}}</button>
+                  <button class="clickable-icon" aria-label="Duplicate">{{icon:copy}}</button>
+                  <button class="clickable-icon" aria-label="Delete">{{icon:trash-2}}</button>
+                </div>
+              </div>
+              <div class="qa-io is-in">
+                <div class="qa-io-title">{{icon:arrow-down-to-line}}Inputs<span class="hint">Click a pill to insert it where the cursor is</span></div>
+                <div class="qa-io-row"><span class="qa-io-src">{{icon:text-cursor-input}}1 · Ask me</span><span class="qa-pill">idea<span class="tick">{{icon:check}}</span></span></div>
+                <div class="qa-io-row"><span class="qa-io-src is-llm">{{icon:sparkles}}2 · Opus</span><span class="qa-pill">draft<span class="tick">{{icon:check}}</span></span></div>
+                <div class="qa-io-row"><span class="qa-io-src is-llm">{{icon:sparkles}}3 · Haiku</span><span class="qa-pill">title<span class="tick">{{icon:check}}</span></span></div>
+                <div class="qa-io-row"><span class="qa-io-src">{{icon:clock}}Always</span><span class="qa-pill">date<span class="tick">{{icon:check}}</span></span><span class="qa-pill is-unused">time</span><span class="qa-pill">timestamp<span class="tick">{{icon:check}}</span></span></div>
+              </div>
+              <div class="qa-fields">
+                <div class="setting-item">
+                  <div class="setting-item-info"><div class="setting-item-name">Path</div><div class="setting-item-description">.md is added if missing.</div></div>
+                  <div class="setting-item-control"><div class="qa-field" style="min-height: 0; width: 400px; padding-inline-end: 12px;">Slipbox/<span class="qa-pill is-builtin">{{icon:hash}}timestamp</span> - <span class="qa-pill">{{icon:sparkles}}title</span></div></div>
+                </div>
+                <div class="setting-item is-stacked">
+                  <div class="setting-item-info"><div class="setting-item-name">Content</div></div>
+                  <div class="setting-item-control">
+                    <div class="qa-field" style="width: 100%; min-height: 220px; font-family: var(--font-monospace); font-size: 12.5px;">---
+title: "<span class="qa-pill">{{icon:sparkles}}title</span>"
+aliases: ["<span class="qa-pill">{{icon:sparkles}}title</span>"]
+created: "<span class="qa-pill is-builtin">{{icon:calendar}}date</span>"
+tags: ["note/slipbox"]
+---
+
+# <span class="qa-pill">{{icon:sparkles}}title</span>
+
+## Description
+
+<span class="qa-pill">{{icon:sparkles}}draft</span>
+
+## Original idea
+
+<span class="qa-pill">{{icon:text-cursor-input}}idea</span><div class="qa-field-tools"><button class="clickable-icon" aria-label="Insert variable"><span class="qa-braces">{ }</span></button></div></div>
+                  </div>
+                </div>
+              </div>
+              <div class="qa-io is-out">
+                <div class="qa-io-title">{{icon:arrow-down-from-line}}Outputs<span class="hint">What later steps can use</span></div>
+                <div class="qa-out-row">
+                  <span class="qa-pill is-file">{{icon:file}}note</span>
+                  <button class="clickable-icon" aria-label="Rename" style="padding: 2px;">{{icon:pencil}}</button>
+                  <span class="qa-out-meta">file · the note this step creates · used by Open file</span>
+                </div>
+              </div>
+            </div>
+          </div>
+<!--INCLUDE:_editor-bottom.html-->
+</x-dc>
+</body>
+</html>

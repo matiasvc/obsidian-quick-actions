@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #1e1e1e; }
+    a { color: var(--text-accent); } a:hover { color: var(--text-accent-hover); }
+<!--OBSIDIAN_CSS-->
+<!--INCLUDE:_qa.css-->
+<!--INCLUDE:_qa2.css-->
+  </style>
+</helmet>
+<!--INCLUDE:_editor-top.html-->
+          <div style="display: flex; align-items: center; gap: var(--size-4-3);">
+            <input type="text" value="Draft Slipbox Note" style="font-size: var(--font-ui-large); font-weight: var(--font-semibold); background: transparent; box-shadow: none; padding-inline-start: 0; width: 360px;">
+            <span style="flex: 1;"></span>
+            <span class="qa-runbar"><span class="ok" style="color: rgb(var(--color-green-rgb)); display: inline-flex; --icon-size: 14px;">{{icon:check}}</span>Ran steps 1–3 · 6.1 s · nothing written</span>
+            <button class="qa-add-step">{{icon:play}}Run to here</button>
+            <button class="clickable-icon" aria-label="Copy URI">{{icon:link}}</button>
+          </div>
+          <div class="qa-split">
+            <div class="qa-rail2">
+              <svg class="qa-wires" viewBox="0 0 44 420" width="44" height="420" style="top: 30px;">
+                <!-- rows are 74px tall here (captured value line); centres at 37, 111, 185, 259, 333 -->
+                <line x1="12" y1="37" x2="12" y2="259" stroke="var(--text-faint)" stroke-width="2"></line>
+                <line x1="22" y1="111" x2="22" y2="259" stroke="var(--text-accent)" stroke-width="2"></line>
+                <line x1="32" y1="185" x2="32" y2="333" stroke="var(--text-accent)" stroke-width="2"></line>
+                <circle cx="12" cy="37" r="4" fill="var(--text-faint)"></circle>
+                <circle cx="12" cy="111" r="3.5" fill="var(--background-secondary)" stroke="var(--text-faint)" stroke-width="2"></circle>
+                <circle cx="12" cy="185" r="3.5" fill="var(--background-secondary)" stroke="var(--text-accent)" stroke-width="2"></circle>
+                <circle cx="12" cy="259" r="3.5" fill="var(--background-secondary)" stroke="var(--text-faint)" stroke-width="2"></circle>
+                <circle cx="22" cy="111" r="4" fill="var(--text-accent)"></circle>
+                <circle cx="22" cy="185" r="3.5" fill="var(--background-secondary)" stroke="var(--text-accent)" stroke-width="2"></circle>
+                <circle cx="22" cy="259" r="3.5" fill="var(--background-secondary)" stroke="var(--text-faint)" stroke-width="2"></circle>
+                <circle cx="32" cy="185" r="4" fill="var(--text-accent)"></circle>
+                <circle cx="32" cy="259" r="3.5" fill="var(--background-secondary)" stroke="var(--text-accent)" stroke-width="2"></circle>
+                <circle cx="32" cy="333" r="3.5" fill="var(--background-secondary)" stroke="var(--text-accent)" stroke-width="2"></circle>
+              </svg>
+              <div class="qa-section-label">Steps</div>
+              <div class="qa-node is-tall">
+                <span class="qa-step-icon">{{icon:text-cursor-input}}</span>
+                <div class="qa-node-text"><div class="qa-node-title">Ask me</div><div class="qa-node-value"><span class="ok">{{icon:check}}</span>“Notes should be atomic so they can be linked from anywhere”</div></div>
+                <span class="qa-node-out qa-pill is-dim">idea</span>
+              </div>
+              <div class="qa-node is-tall">
+                <span class="qa-step-icon is-llm">{{icon:sparkles}}</span>
+                <div class="qa-node-text"><div class="qa-node-title">Opus</div><div class="qa-node-value"><span class="ok">{{icon:check}}</span>“A note that carries exactly one idea can be cited from…” · 4.8 s</div></div>
+                <span class="qa-node-out qa-pill">draft</span>
+              </div>
+              <div class="qa-node is-tall is-active">
+                <span class="qa-step-icon is-llm">{{icon:sparkles}}</span>
+                <div class="qa-node-text"><div class="qa-node-title">Haiku</div><div class="qa-node-value"><span class="ok">{{icon:check}}</span>“Atomic notes link from anywhere” · 0.9 s</div></div>
+                <span class="qa-node-out qa-pill">title</span>
+              </div>
+              <div class="qa-node is-tall is-dim">
+                <span class="qa-step-icon">{{icon:file-plus}}</span>
+                <div class="qa-node-text"><div class="qa-node-title">Create file</div><div class="qa-node-value">Would write Slipbox/20260904135200 - Atomic notes link from anywhere.md</div></div>
+              </div>
+              <div class="qa-node is-tall is-dim">
+                <span class="qa-step-icon">{{icon:external-link}}</span>
+                <div class="qa-node-text"><div class="qa-node-title">Open file</div><div class="qa-node-value">not run</div></div>
+              </div>
+              <div style="padding: var(--size-4-2) 0 0 44px;"><button class="qa-add-step">{{icon:plus}}Add step</button></div>
+            </div>
+            <div class="qa-pane">
+              <div class="qa-pane-header">
+                <span class="qa-num">3</span>
+                <select class="dropdown"><option>Ask a model (LLM)</option><option>Ask me (Prompt)</option><option>Pick a file</option><option>Tasks modal</option><option>Choice</option><option>Insert in section</option><option>Create file</option><option>Open file</option></select>
+                <span class="qa-seg" style="margin-inline-start: var(--size-4-2);"><span>Edit</span><span class="is-active">Last run</span></span>
+                <span style="flex: 1;"></span>
+                <div class="qa-card-actions">
+                  <button class="clickable-icon" aria-label="Move up">{{icon:arrow-up}}</button>
+                  <button class="clickable-icon" aria-label="Move down">{{icon:arrow-down}}</button>
+                  <button class="clickable-icon" aria-label="Duplicate">{{icon:copy}}</button>
+                  <button class="clickable-icon" aria-label="Delete">{{icon:trash-2}}</button>
+                </div>
+              </div>
+              <div class="qa-result-label">Prompt sent to Haiku</div>
+              <div class="qa-result">Note body:
+<mark>A note that carries exactly one idea can be cited from any other note without dragging its neighbours along. That is what makes a Slipbox compound: links land on ideas, not on documents.</mark>
+
+Original idea:
+<mark>Notes should be atomic so they can be linked from anywhere</mark></div>
+              <div class="qa-result-label">Produced <span class="qa-pill" style="margin-inline-start: 4px;">title</span></div>
+              <div class="qa-result" style="border: 1px solid hsla(var(--color-green-rgb), 0.35);">Atomic notes link from anywhere</div>
+              <div class="qa-result-label">Next step would create</div>
+              <div class="qa-result" style="color: var(--text-muted);">Slipbox/<mark>20260904135200</mark> - <mark>Atomic notes link from anywhere</mark>.md</div>
+              <div style="display: flex; gap: var(--size-4-2); margin-top: var(--size-4-3);">
+                <button class="qa-add-step">{{icon:play}}Run step 4 too</button>
+                <button>Discard run</button>
+              </div>
+            </div>
+          </div>
+<!--INCLUDE:_editor-bottom.html-->
+</x-dc>
+</body>
+</html>

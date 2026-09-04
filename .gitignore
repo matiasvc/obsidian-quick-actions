@@ -2,3 +2,5 @@ node_modules/
 main.js
 dist/
 data.json
+test/.build/
+design/out/

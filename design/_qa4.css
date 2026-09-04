@@ -1,0 +1,49 @@
+/* Iteration 4: three looks for the same pane. */
+
+/* Shared: a calmer pill, interface font, no icon. */
+.qp { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 5px; font-size: var(--font-ui-smaller); line-height: 18px; white-space: nowrap; background: hsla(var(--color-accent-hsl), 0.14); color: var(--text-accent); }
+.qp.is-off { background: transparent; color: var(--text-faint); box-shadow: inset 0 0 0 1px var(--background-modifier-border); }
+.qp.is-file { background: hsla(var(--color-blue-rgb), 0.14); color: rgb(var(--color-blue-rgb)); }
+.qp.is-mono { font-family: var(--font-monospace); font-size: 12px; }
+.qp-lead { font-size: var(--font-ui-small); color: var(--text-muted); }
+
+/* Look 1 · Quiet: no boxes, typography does the grouping. */
+.l1 .qa-pane { padding: var(--size-4-4) var(--size-4-8); }
+.l1 .qa-pane-header { border-bottom: none; padding-bottom: var(--size-4-3); margin-bottom: 0; }
+.l1 .l1-step { font-size: var(--font-ui-small); color: var(--text-muted); }
+.l1 .l1-line { display: flex; align-items: baseline; gap: var(--size-4-2); flex-wrap: wrap; padding: var(--size-4-2) 0; }
+.l1 .l1-line .qp-lead { flex: 0 0 72px; }
+.l1 .l1-fields { margin: var(--size-4-3) 0 var(--size-4-4); display: flex; flex-direction: column; gap: var(--size-4-4); }
+.l1 .l1-field { display: flex; flex-direction: column; gap: var(--size-2-2); }
+.l1 .l1-label { font-size: var(--font-ui-small); color: var(--text-normal); }
+.l1 .l1-row { display: flex; align-items: center; justify-content: space-between; gap: var(--size-4-3); }
+.l1 .qa-field { padding-inline-end: var(--size-4-3); border-color: transparent; background: var(--background-primary-alt); }
+.l1 .l1-out { border-top: 1px solid var(--background-modifier-border); padding-top: var(--size-4-3); }
+.l1 .qa-rail { flex-basis: 250px; background: transparent; border-inline-end: 1px solid var(--background-modifier-border); }
+.l1 .qa-rail-item { height: 46px; padding-inline-start: var(--size-4-3); }
+.l1 .qa-rail-item .qa-num { width: 18px; height: 18px; font-size: 11px; background: transparent; color: var(--text-faint); }
+.l1 .qa-rail-item.is-active .qa-num { color: var(--text-normal); }
+.l1 .qa-rail-sub { display: none; }
+
+/* Look 2 · Native rows: everything is a setting-item. */
+.l2 .qa-fields .setting-item-description .qp { vertical-align: middle; }
+.l2 .l2-pills { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--size-2-2); max-width: 420px; }
+.l2 .qa-field { border-color: var(--background-modifier-border); }
+
+/* Look 3 · Card: one object with an input band on top and an output band below. */
+.l3 .qa-pane { padding: var(--size-4-3) var(--size-4-4); background: var(--background-primary); }
+.l3 .l3-card { border-radius: var(--radius-l); background: var(--background-secondary); border: 1px solid var(--background-modifier-border); overflow: hidden; }
+.l3 .l3-band { display: flex; align-items: center; gap: var(--size-4-2); padding: var(--size-4-2) var(--size-4-4); background: var(--background-primary-alt); flex-wrap: wrap; }
+.l3 .l3-band.is-in { border-bottom: 1px solid var(--background-modifier-border); }
+.l3 .l3-band.is-out { border-top: 1px solid var(--background-modifier-border); }
+.l3 .l3-band .qp-lead { flex: 0 0 64px; font-size: var(--font-ui-smaller); text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); }
+.l3 .l3-body { padding: var(--size-4-2) var(--size-4-4) var(--size-4-3); }
+.l3 .l3-body .setting-item { border: none; background: transparent; padding: var(--size-4-2) 0; margin: 0; border-radius: 0; border-top: 1px solid var(--background-modifier-border); }
+.l3 .l3-body .setting-item:first-child { border-top: none; }
+.l3 .l3-body .setting-item.is-stacked { flex-direction: column; align-items: stretch; }
+.l3 .l3-body .setting-item.is-stacked .setting-item-control { justify-content: stretch; margin-top: var(--size-2-2); }
+.l3 .qa-field { background: var(--background-primary); border-color: var(--background-modifier-border); padding-inline-end: var(--size-4-3); }
+.l3 .l3-head { display: flex; align-items: center; gap: var(--size-4-2); padding: 0 var(--size-2-1) var(--size-4-2); }
+.l3 .qa-rail { background: var(--background-primary); }
+.l3 .qa-rail-item .l3-out { font-size: var(--font-ui-smaller); color: var(--text-faint); }
+.l3 .qa-rail-item.is-active .l3-out { color: var(--text-accent); }

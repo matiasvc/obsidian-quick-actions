@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #1e1e1e; }
+    a { color: var(--text-accent); } a:hover { color: var(--text-accent-hover); }
+<!--OBSIDIAN_CSS-->
+<!--INCLUDE:_qa.css-->
+<!--INCLUDE:_qa2.css-->
+<!--INCLUDE:_qa4.css-->
+<!--INCLUDE:_qa5.css-->
+    .RAIL3 { background: var(--background-modifier-hover); }
+    .RAIL3 .l3-out { color: var(--text-accent); }
+  </style>
+</helmet>
+<!--INCLUDE:_editor3-top.html-->
+          <div style="display: flex; align-items: center; gap: var(--size-4-3);">
+            <input type="text" value="Add to Log" style="font-size: var(--font-ui-large); font-weight: var(--font-semibold); background: transparent; box-shadow: none; padding-inline-start: 0; width: 360px;">
+            <span style="flex: 1;"></span>
+            <button class="qa-add-step">{{icon:play}}Test run</button>
+            <button class="clickable-icon" aria-label="Copy URI">{{icon:link}}</button>
+          </div>
+
+          <div class="qa-split l3">
+<!--INCLUDE:_rail-log.html-->
+            <div class="qa-pane" style="position: relative;">
+              <div class="l3-head">
+                <span class="qa-num">3</span>
+                <select class="dropdown"><option>Insert in section</option></select>
+                <span style="flex: 1;"></span>
+                <button class="clickable-icon" aria-label="More">{{icon:ellipsis}}</button>
+              </div>
+              <div class="l3-card">
+                <div class="l3-band is-in">
+                  <span class="qp-lead">In</span>
+                  <span class="qp is-file">file</span>
+                  <span class="qp">description</span>
+                  <span class="qp">date</span>
+                  <span class="qp">time</span>
+                  <span class="qp is-off">timestamp</span>
+                </div>
+                <div class="l3-body">
+                  <div class="setting-item">
+                    <div class="setting-item-info"><div class="setting-item-name">File</div><div class="setting-item-description">A file from an earlier step, or a path.</div></div>
+                    <div class="setting-item-control"><div class="qa-field" style="width: 100%; width: 380px;"><span class="qp is-file">file</span></div></div>
+                  </div>
+                  <div class="setting-item">
+                    <div class="setting-item-info"><div class="setting-item-name">Section</div><div class="setting-item-description">The heading to insert under.</div></div>
+                    <div class="setting-item-control"><input type="text" value="# Logs"></div>
+                  </div>
+                  <div class="setting-item">
+                    <div class="setting-item-info"><div class="setting-item-name">Position</div></div>
+                    <div class="setting-item-control"><select class="dropdown"><option>Beginning of section</option><option>End of section</option></select></div>
+                  </div>
+                  <div class="setting-item is-stacked">
+                    <div class="setting-item-info"><div class="setting-item-name">Text</div></div>
+                    <div class="setting-item-control"><div class="qa-field" style="width: 100%; min-height: 0;">- <span class="qp">date</span> (<span class="qp">time</span>): <span class="qp">description</span></div></div>
+                  </div>
+                  <div class="setting-item">
+                    <div class="setting-item-info"><div class="setting-item-name">Create the file if missing</div><div class="setting-item-description">Off, so a mistyped path fails instead of making a stray file.</div></div>
+                    <div class="setting-item-control"><div class="checkbox-container"><input type="checkbox"></div></div>
+                  </div>
+                </div>
+                <div class="l3-band is-out">
+                  <span class="qp-lead">Out</span>
+                  <span class="l3-hint">nothing · this step writes to the file</span>
+                </div>
+              </div>
+            </div>
+          </div>
+<!--INCLUDE:_editor-bottom.html-->
+</x-dc>
+</body>
+</html>

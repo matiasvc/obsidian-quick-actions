@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #1e1e1e; }
+    a { color: var(--text-accent); } a:hover { color: var(--text-accent-hover); }
+<!--OBSIDIAN_CSS-->
+<!--INCLUDE:_qa.css-->
+<!--INCLUDE:_qa2.css-->
+<!--INCLUDE:_qa3.css-->
+    .RAIL1 { background: var(--background-modifier-hover); }
+  </style>
+</helmet>
+<!--INCLUDE:_editor-top.html-->
+          <div style="display: flex; align-items: center; gap: var(--size-4-3);">
+            <input type="text" value="Draft Slipbox Note" style="font-size: var(--font-ui-large); font-weight: var(--font-semibold); background: transparent; box-shadow: none; padding-inline-start: 0; width: 360px;">
+            <span style="flex: 1;"></span>
+            <button class="qa-add-step">{{icon:play}}Test run</button>
+            <button class="clickable-icon" aria-label="Copy URI">{{icon:link}}</button>
+          </div>
+          <div class="qa-split">
+<!--INCLUDE:_rail3.html-->
+            <div class="qa-pane">
+              <div class="qa-pane-header">
+                <span class="qa-num">1</span>
+                <select class="dropdown"><option>Ask me (Prompt)</option><option>Ask a model (LLM)</option><option>Pick a file</option><option>Tasks modal</option><option>Choice</option><option>Insert in section</option><option>Create file</option><option>Open file</option></select>
+                <span style="flex: 1;"></span>
+                <div class="qa-card-actions">
+                  <button class="clickable-icon" aria-label="Move up">{{icon:arrow-up}}</button>
+                  <button class="clickable-icon" aria-label="Move down">{{icon:arrow-down}}</button>
+                  <button class="clickable-icon" aria-label="Duplicate">{{icon:copy}}</button>
+                  <button class="clickable-icon" aria-label="Delete">{{icon:trash-2}}</button>
+                </div>
+              </div>
+              <div class="qa-io is-in">
+                <div class="qa-io-title">{{icon:arrow-down-to-line}}Inputs<span class="hint">Click a pill to insert it where the cursor is</span></div>
+                <div class="qa-io-row"><span class="qa-io-src">{{icon:clock}}Always</span><span class="qa-pill is-unused">date</span><span class="qa-pill is-unused">time</span><span class="qa-pill is-unused">timestamp</span></div>
+                <div class="qa-io-empty">This is the first step, so nothing from earlier steps yet.</div>
+              </div>
+              <div class="qa-fields">
+                <div class="setting-item">
+                  <div class="setting-item-info"><div class="setting-item-name">Question</div><div class="setting-item-description">Shown above the input box.</div></div>
+                  <div class="setting-item-control"><input type="text" value="Rough idea or observation:" style="width: 300px;"></div>
+                </div>
+                <div class="setting-item">
+                  <div class="setting-item-info"><div class="setting-item-name">Multi-line</div><div class="setting-item-description">A larger box, Enter adds a line, Cmd-Enter submits.</div></div>
+                  <div class="setting-item-control"><div class="checkbox-container is-enabled"><input type="checkbox" checked></div></div>
+                </div>
+              </div>
+              <div class="qa-io is-out">
+                <div class="qa-io-title">{{icon:arrow-down-from-line}}Outputs<span class="hint">What later steps can use</span></div>
+                <div class="qa-out-row">
+                  <span class="qa-pill">{{icon:text-cursor-input}}idea</span>
+                  <button class="clickable-icon" aria-label="Rename" style="padding: 2px;">{{icon:pencil}}</button>
+                  <span class="qa-out-meta">text · what you typed · used by Opus, Haiku, Create file</span>
+                </div>
+              </div>
+            </div>
+          </div>
+<!--INCLUDE:_editor-bottom.html-->
+</x-dc>
+</body>
+</html>

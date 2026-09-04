@@ -1,0 +1,25 @@
+/* Final set, Look 3. */
+.l3 .l3-body .setting-item-control input[type="text"] { width: 300px; }
+.l3 .l3-body .qa-field { min-height: 0; }
+.l3 .qp.is-edit { box-shadow: 0 0 0 2px hsla(var(--color-accent-hsl), 0.35); background: var(--background-primary); }
+.l3 .l3-band .l3-hint { font-size: var(--font-ui-smaller); color: var(--text-faint); }
+.l3 .l3-options { display: flex; flex-direction: column; gap: var(--size-2-2); width: 100%; }
+.l3 .l3-option { display: flex; align-items: center; gap: var(--size-4-2); }
+.l3 .l3-option input[type="text"] { flex: 1; width: auto; }
+.l3 .l3-option .clickable-icon { padding: var(--size-2-1); --icon-size: var(--icon-s); }
+.l3 .qa-rail-item.is-active .qa-step-icon { color: var(--text-normal); }
+.l3 .qa-rail-item.is-active .qa-step-icon.is-llm { color: var(--text-accent); }
+/* Add step picker */
+.l3-picker { position: absolute; width: 300px; z-index: 60; }
+.l3-picker .menu-item { padding: var(--size-2-3) var(--size-4-2); align-items: flex-start; white-space: normal; }
+.l3-picker .menu-item-icon { --icon-size: var(--icon-s); --icon-stroke: var(--icon-s-stroke-width); margin-top: 2px; }
+.l3-picker .qa-item-text { display: flex; flex-direction: column; gap: 1px; }
+.l3-picker .qa-item-src { font-size: var(--font-ui-smaller); color: var(--text-muted); }
+.l3-picker .qa-section-label { padding: var(--size-4-2) var(--size-4-2) var(--size-2-1); }
+/* Empty state */
+.l3-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--size-4-2); padding: var(--size-4-6) var(--size-4-5); border: 1px dashed var(--background-modifier-border-hover); border-radius: var(--radius-l); margin-bottom: var(--size-4-4); }
+.l3-empty .title { font-size: var(--font-ui-medium); font-weight: var(--font-medium); }
+.l3-empty .text { font-size: var(--font-ui-small); color: var(--text-muted); max-width: 520px; }
+.l3-empty .row { display: flex; gap: var(--size-4-2); flex-wrap: wrap; margin-top: var(--size-4-1); }
+/* Model editor */
+.l3-ok { display: inline-flex; align-items: center; gap: var(--size-2-2); font-size: var(--font-ui-smaller); color: rgb(var(--color-green-rgb)); --icon-size: 14px; --icon-stroke: 2.5px; }

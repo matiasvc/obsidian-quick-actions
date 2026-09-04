@@ -1,0 +1,43 @@
+            <div class="qa-rail2">
+              <svg class="qa-wires" viewBox="0 0 44 348" width="44" height="348" style="top: 30px;">
+                <!-- lanes: idea x=12 (step1 → 2,3,4), draft x=22 (step2 → 3,4), title x=32 (step3 → 4,5). Row centres every 58px from 29. -->
+                <line x1="12" y1="29" x2="12" y2="203" stroke="var(--text-accent)" stroke-width="2"></line>
+                <line x1="22" y1="87" x2="22" y2="203" stroke="var(--text-accent)" stroke-width="2"></line>
+                <line x1="32" y1="145" x2="32" y2="261" stroke="var(--text-faint)" stroke-width="2"></line>
+                <circle cx="12" cy="29" r="4" fill="var(--text-accent)"></circle>
+                <circle cx="12" cy="87" r="3.5" fill="var(--background-secondary)" stroke="var(--text-accent)" stroke-width="2"></circle>
+                <circle cx="12" cy="145" r="3.5" fill="var(--background-secondary)" stroke="var(--text-accent)" stroke-width="2"></circle>
+                <circle cx="12" cy="203" r="3.5" fill="var(--background-secondary)" stroke="var(--text-accent)" stroke-width="2"></circle>
+                <circle cx="22" cy="87" r="4" fill="var(--text-accent)"></circle>
+                <circle cx="22" cy="145" r="3.5" fill="var(--background-secondary)" stroke="var(--text-accent)" stroke-width="2"></circle>
+                <circle cx="22" cy="203" r="3.5" fill="var(--background-secondary)" stroke="var(--text-accent)" stroke-width="2"></circle>
+                <circle cx="32" cy="145" r="4" fill="var(--text-faint)"></circle>
+                <circle cx="32" cy="203" r="3.5" fill="var(--background-secondary)" stroke="var(--text-faint)" stroke-width="2"></circle>
+                <circle cx="32" cy="261" r="3.5" fill="var(--background-secondary)" stroke="var(--text-faint)" stroke-width="2"></circle>
+              </svg>
+              <div class="qa-section-label">Steps</div>
+              <div class="qa-node">
+                <span class="qa-step-icon">{{icon:text-cursor-input}}</span>
+                <div class="qa-node-text"><div class="qa-node-title">Ask me</div><div class="qa-node-sub">Rough idea or observation:</div></div>
+                <span class="qa-node-out qa-pill">idea</span>
+              </div>
+              <div class="qa-node is-active">
+                <span class="qa-step-icon is-llm">{{icon:sparkles}}</span>
+                <div class="qa-node-text"><div class="qa-node-title">Opus</div><div class="qa-node-sub">uses <span class="qa-pill" style="line-height: 15px; font-size: 11px;">idea</span></div></div>
+                <span class="qa-node-out qa-pill">draft</span>
+              </div>
+              <div class="qa-node">
+                <span class="qa-step-icon is-llm">{{icon:sparkles}}</span>
+                <div class="qa-node-text"><div class="qa-node-title">Haiku</div><div class="qa-node-sub">uses draft, idea</div></div>
+                <span class="qa-node-out qa-pill is-dim">title</span>
+              </div>
+              <div class="qa-node">
+                <span class="qa-step-icon">{{icon:file-plus}}</span>
+                <div class="qa-node-text"><div class="qa-node-title">Create file</div><div class="qa-node-sub">Slipbox/{{timestamp}} - {{title}}</div></div>
+              </div>
+              <div class="qa-node">
+                <span class="qa-step-icon">{{icon:external-link}}</span>
+                <div class="qa-node-text"><div class="qa-node-title">Open file</div><div class="qa-node-sub">at ## Description</div></div>
+              </div>
+              <div style="padding: var(--size-4-2) 0 0 44px;"><button class="qa-add-step">{{icon:plus}}Add step</button></div>
+            </div>

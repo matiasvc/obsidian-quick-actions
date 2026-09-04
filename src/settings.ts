@@ -1,69 +1,19 @@
-import { AbstractInputSuggest, App, Modal, Notice, PluginSettingTab, Setting, setIcon, TFile, TFolder } from "obsidian";
-import {
-  Action,
-  ModelConfig,
-  Step,
-  StepType,
-  STEP_TYPE_LABELS,
-  defaultStepForType,
-  generateId,
-  toSlug,
-} from "./types";
+import { App, Notice, PluginSettingTab, Setting, setIcon } from "obsidian";
+import { Action, ModelConfig, generateId } from "./types";
 import QuickActionsPlugin from "./main";
-import { getBuiltinVars } from "./executor";
+import { STARTERS } from "./starters";
+import { providerLabel } from "./llm";
+import { chainEl, copyUri, emptyEl, textButton } from "./ui";
+import { showRowMenu } from "./menus";
+import { enableDragReorder, moveItem } from "./dragreorder";
+import { ModelEditModal } from "./model-editor";
+import { ActionEditModal } from "./editor";
 
-// File picker when editing action steps.
-class FileSuggest extends AbstractInputSuggest<TFile> {
-
-  getSuggestions(query: string): TFile[] {
-    const lower = query.toLowerCase();
-    return this.app.vault.getMarkdownFiles()
-      .filter((f) => f.path.toLowerCase().contains(lower))
-      .slice(0, 20);
-  }
-
-  renderSuggestion(file: TFile, el: HTMLElement): void {
-    el.setText(file.path);
-  }
-
-  selectSuggestion(file: TFile): void {
-    this.setValue(file.path);
-    this.close();
-  }
-}
-
-// Folder picker when editing action steps.
-class FolderSuggest extends AbstractInputSuggest<TFolder> {
-
-  getSuggestions(query: string): TFolder[] {
-    const lower = query.toLowerCase();
-    const folders: TFolder[] = [];
-    this.app.vault.getAllLoadedFiles().forEach((f) => {
-      if (f instanceof TFolder && f.path.toLowerCase().contains(lower)) {
-        folders.push(f);
-      }
-    });
-    folders.sort((a, b) => a.path.localeCompare(b.path));
-    return folders.slice(0, 20);
-  }
-
-  renderSuggestion(folder: TFolder, el: HTMLElement): void {
-    el.setText(folder.path + "/");
-  }
-
-  selectSuggestion(folder: TFolder): void {
-    this.setValue(folder.path + "/");
-    this.close();
-  }
-}
-
-// Returns a summary string of a series of steps.
-function stepSummary(steps: Step[]): string {
-  return steps.map((s) => STEP_TYPE_LABELS[s.type]).join(" -> ");
-}
+const UNDO_NOTICE_MS = 8000;
 
 export class QuickActionsSettingTab extends PluginSettingTab {
   plugin: QuickActionsPlugin;
+  private disposeDrag: (() => void) | null = null;
 
   constructor(app: App, plugin: QuickActionsPlugin) {
     super(app, plugin);
@@ -72,500 +22,164 @@ export class QuickActionsSettingTab extends PluginSettingTab {
 
   display(): void {
     const { containerEl } = this;
+    const { actions, models } = this.plugin.settings;
+    this.disposeDrag?.();
     containerEl.empty();
 
-    // Models
-    new Setting(containerEl).setHeading().setName("Models").addButton((btn) =>
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "+" prefix is a UI convention for add buttons
-      btn.setButtonText("+ Add model").onClick(() => {
-        const model: ModelConfig = {
-          name: "New Model",
-          provider: "anthropic",
-          model: "",
-          secret_id: "",
-        };
-        this.plugin.settings.models.push(model);
-        new ModelEditModal(this.app, this.plugin, model, () => this.display()).open();
-      }),
-    );
-
-    const models = this.plugin.settings.models;
-    for (let i = 0; i < models.length; i++) {
-      const model = models[i];
-      new Setting(containerEl)
-        .setName(model.name || "(unnamed)")
-        .setDesc(`${model.provider} / ${model.model || "(no model ID)"}`)
-        .addButton((btn) =>
-          btn.setButtonText("Edit").onClick(() => {
-            new ModelEditModal(this.app, this.plugin, model, () => this.display()).open();
-          }),
-        )
-        .addButton((btn) =>
-          btn.setButtonText("Duplicate").onClick(async () => {
-            const copy: ModelConfig = { ...model, name: model.name + " (copy)" };
-            models.splice(i + 1, 0, copy);
-            await this.plugin.saveSettings();
-            this.display();
-          }),
-        )
-        .addButton((btn) =>
-          btn.setButtonText("Delete").setWarning().onClick(async () => {
-            models.splice(i, 1);
-            await this.plugin.saveSettings();
-            this.display();
-          }),
-        );
-    }
-
-    // Actions
-    new Setting(containerEl).setHeading().setName("Actions").addButton((btn) =>
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "+" prefix is a UI convention for add buttons
-      btn.setButtonText("+ New action").onClick(() => {
-        const action: Action = {
-          id: generateId(),
-          name: "New Action",
-          steps: [],
-        };
-        this.plugin.settings.actions.push(action);
-        this.openActionEditor(action);
-      }),
-    );
-
-    const actions = this.plugin.settings.actions;
-    for (let i = 0; i < actions.length; i++) {
-      const action = actions[i];
-      const setting = new Setting(containerEl)
-        .setName(action.name)
-        .setDesc(stepSummary(action.steps) || "(no steps)");
-
-      setting.addButton((btn) =>
-        btn.setButtonText("Edit").onClick(() => {
-          this.openActionEditor(action);
-        }),
-      );
-      setting.addButton((btn) =>
-        btn.setButtonText("Duplicate").onClick(async () => {
-          const copy: Action = JSON.parse(JSON.stringify(action));
-          copy.id = generateId();
-          copy.name = action.name + " (copy)";
-          actions.splice(i + 1, 0, copy);
-          await this.plugin.saveSettings();
-          this.display();
-        }),
-      );
-      setting.addButton((btn) =>
-        btn.setButtonText("Delete").setWarning().onClick(async () => {
-          actions.splice(i, 1);
-          await this.plugin.saveSettings();
-          this.display();
-        }),
-      );
-      setting.addButton((btn) => {
-        btn.setButtonText("\u2191").setTooltip("Move up");
-        if (i > 0) {
-          btn.onClick(async () => {
-            [actions[i - 1], actions[i]] = [actions[i], actions[i - 1]];
-            await this.plugin.saveSettings();
-            this.display();
-          });
-        } else {
-          btn.setDisabled(true);
-          btn.buttonEl.addClass("quick-actions-btn-hidden");
-        }
+    new Setting(containerEl)
+      .setHeading()
+      .setName("Actions")
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- URI is an acronym
+      .setDesc("Each action is a chain of steps and runs as a command from the palette, a hotkey, or its URI.")
+      .addButton((b) => {
+        b.setButtonText("Add action").onClick(() => this.editAction(null, { id: generateId(), name: "New action", steps: [] }));
+        if (actions.length === 0) b.setCta();
       });
-      setting.addButton((btn) => {
-        btn.setButtonText("\u2193").setTooltip("Move down");
-        if (i < actions.length - 1) {
-          btn.onClick(async () => {
-            [actions[i], actions[i + 1]] = [actions[i + 1], actions[i]];
-            await this.plugin.saveSettings();
-            this.display();
-          });
-        } else {
-          btn.setDisabled(true);
-          btn.buttonEl.addClass("quick-actions-btn-hidden");
-        }
-      });
-    }
-  }
 
-  private openActionEditor(action: Action) {
-    new ActionEditModal(this.app, this.plugin, action, () => this.display()).open();
-  }
-}
-
-class ModelEditModal extends Modal {
-  private plugin: QuickActionsPlugin;
-  private model: ModelConfig;
-  private onSaved: () => void;
-  private draft: ModelConfig;
-
-  constructor(app: App, plugin: QuickActionsPlugin, model: ModelConfig, onSaved: () => void) {
-    super(app);
-    this.plugin = plugin;
-    this.model = model;
-    this.onSaved = onSaved;
-    this.draft = { ...model };
-  }
-
-  onOpen() {
-    this.render();
-  }
-
-  onClose() {
-    this.contentEl.empty();
-  }
-
-  private render() {
-    const { contentEl } = this;
-    contentEl.empty();
-
-    new Setting(contentEl).setHeading().setName("Edit model");
-
-    new Setting(contentEl).setName("Name").addText((t) =>
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- model names are proper nouns
-      t.setPlaceholder("e.g. Sonnet, Haiku, GPT-4o")
-        .setValue(this.draft.name)
-        .onChange((v) => { this.draft.name = v; }),
-    );
-
-    new Setting(contentEl).setName("Provider").addDropdown((d) =>
-      d.addOption("anthropic", "Anthropic")
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- company names are proper nouns
-        .addOption("openai", "OpenAI")
-        .setValue(this.draft.provider)
-        .onChange((v) => { this.draft.provider = v as "openai" | "anthropic"; }),
-    );
-
-    new Setting(contentEl).setName("Model ID").addText((t) =>
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- e.g. placeholder, not a sentence
-      t.setPlaceholder("e.g. claude-sonnet-4-6")
-        .setValue(this.draft.model)
-        .onChange((v) => { this.draft.model = v; }),
-    );
-
-    new Setting(contentEl)
-      .setName("API key secret ID")
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Settings" and "Keychain" are Obsidian UI section names
-      .setDesc("Store your API key in Settings > Keychain, then enter the secret ID here.")
-      .addText((t) =>
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- e.g. placeholder, not a sentence
-        t.setPlaceholder("e.g. anthropic-api-key")
-          .setValue(this.draft.secret_id)
-          .onChange((v) => { this.draft.secret_id = v; }),
+    const list = containerEl.createDiv();
+    actions.forEach((action, i) => this.actionRow(list, action, i));
+    if (actions.length === 0) {
+      const { row } = emptyEl(
+        containerEl,
+        "No actions yet",
+        "An action asks you for something, can hand it to a model, and writes the result into your vault. Start from scratch, or from one of these and change what you like.",
       );
-
-    const footer = new Setting(contentEl);
-    footer.addButton((btn) =>
-      btn.setButtonText("Save").setCta().onClick(async () => {
-        Object.assign(this.model, this.draft);
-        await this.plugin.saveSettings();
-        this.onSaved();
-        this.close();
-      }),
-    );
-    footer.addButton((btn) =>
-      btn.setButtonText("Cancel").onClick(() => {
-        this.close();
-      }),
-    );
-  }
-}
-
-class ActionEditModal extends Modal {
-  private plugin: QuickActionsPlugin;
-  private action: Action;
-  private onSaved: () => void;
-  // Work on a deep copy so Cancel doesn't persist partial changes
-  private draft: Action;
-
-  constructor(app: App, plugin: QuickActionsPlugin, action: Action, onSaved: () => void) {
-    super(app);
-    this.plugin = plugin;
-    this.action = action;
-    this.onSaved = onSaved;
-    this.draft = JSON.parse(JSON.stringify(action));
-  }
-
-  onOpen() {
-    this.modalEl.addClass("quick-actions-edit-modal");
-    this.render();
-  }
-
-  onClose() {
-    this.contentEl.empty();
-  }
-
-  private render() {
-    const { contentEl } = this;
-    contentEl.empty();
-
-    new Setting(contentEl).setHeading().setName("Edit action");
-
-    // Action info group: Name, Built-in variables, URI
-    const infoGroup = contentEl.createDiv("quick-actions-step quick-actions-info-group");
-
-    // Name
-    new Setting(infoGroup).setName("Name").addText((text) =>
-      text.setValue(this.draft.name).onChange((val) => {
-        this.draft.name = val;
-        uriCode.setText(this.buildUri(val));
-      }),
-    );
-
-    // Built-in variables
-    const builtinVars = getBuiltinVars();
-    const varsSetting = new Setting(infoGroup).setName("Variables");
-    const table = varsSetting.descEl.createEl("table", { cls: "quick-actions-vars-table" });
-    for (const [key, value] of Object.entries(builtinVars)) {
-      const row = table.createEl("tr");
-      row.createEl("td").createEl("code", { text: `{{${key}}}` });
-      row.createEl("td", { text: value });
+      for (const starter of STARTERS) {
+        textButton(row, starter.icon, starter.title, () => this.editAction(null, starter.make())).setAttr("aria-label", starter.desc);
+      }
     }
-
-    // URI
-    const uriSetting = new Setting(infoGroup).setName("URI");
-    const uriCode = uriSetting.descEl.createEl("code", {
-      cls: "quick-actions-uri-code",
-      text: this.buildUri(this.draft.name),
-    });
-    uriSetting.addButton((btn) => {
-      setIcon(btn.buttonEl, "copy");
-      btn.setTooltip("Copy URI").onClick(() => {
-        navigator.clipboard.writeText(uriCode.getText());
-        new Notice("URI copied to clipboard");
-      });
+    this.disposeDrag = enableDragReorder(list, {
+      itemSelector: ".quick-actions-row",
+      handleSelector: ".quick-actions-grip",
+      onReorder: (from, to) => {
+        moveItem(actions, from, to);
+        this.save();
+      },
     });
 
-    // Steps list
-    const stepsContainer = contentEl.createDiv("quick-actions-steps-container");
+    new Setting(containerEl)
+      .setHeading()
+      .setName("Models")
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- API and Keychain
+      .setDesc("Ask a model steps pick one of these. API keys live in Settings › Keychain and are referenced by name.")
+      .addButton((b) =>
+        b.setButtonText("Add model").onClick(() => this.editModel(null, { name: "", provider: "anthropic", model: "", secret_id: "" })),
+      );
+    models.forEach((model, i) => this.modelRow(containerEl, model, i));
+    if (models.length === 0) emptyEl(containerEl, null, "No models yet. Only needed for Ask a model steps.");
+  }
 
-    for (let i = 0; i < this.draft.steps.length; i++) {
-      this.renderStep(stepsContainer, i);
-    }
+  hide(): void {
+    this.disposeDrag?.();
+    this.disposeDrag = null;
+  }
 
-    // Add step button
-    new Setting(contentEl).addButton((btn) =>
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "+" prefix is a UI convention for add buttons
-      btn.setButtonText("+ Add step").onClick(() => {
-        this.draft.steps.push(defaultStepForType("prompt"));
-        this.render();
-      }),
-    );
-
-    // Save / Cancel
-    const footer = new Setting(contentEl);
-    footer.addButton((btn) =>
-      btn
-        .setButtonText("Save")
-        .setCta()
-        .onClick(async () => {
-          // Copy draft back to real action
-          Object.assign(this.action, this.draft);
-          await this.plugin.saveSettings();
-          this.onSaved();
-          this.close();
-        }),
-    );
-    footer.addButton((btn) =>
-      btn.setButtonText("Cancel").onClick(() => {
-        this.close();
-      }),
+  private actionRow(parent: HTMLElement, action: Action, index: number): void {
+    const { actions, models } = this.plugin.settings;
+    const row = new Setting(parent).setName(action.name || "Untitled action");
+    row.settingEl.addClass("quick-actions-row");
+    const grip = createDiv("quick-actions-grip");
+    setIcon(grip, "grip-vertical");
+    row.settingEl.prepend(grip);
+    chainEl(row.descEl, action.steps, models);
+    row.addExtraButton((b) => b.setIcon("pencil").setTooltip("Edit").onClick(() => this.editAction(action, action)));
+    row.addExtraButton((b) =>
+      b
+        .setIcon("ellipsis-vertical")
+        .setTooltip("More")
+        .onClick(() =>
+          showRowMenu(b.extraSettingsEl, {
+            extra: [
+              {
+                title: "Duplicate",
+                icon: "copy",
+                click: () => {
+                  const copy: Action = { ...JSON.parse(JSON.stringify(action)), id: generateId(), name: `${action.name} copy` };
+                  actions.splice(index + 1, 0, copy);
+                  this.save();
+                },
+              },
+              { title: "Copy URI", icon: "link", click: () => copyUri(this.app, action) },
+            ],
+            index,
+            count: actions.length,
+            onMove: (to) => {
+              moveItem(actions, index, to);
+              this.save();
+            },
+            onDelete: () => this.deleteItem(actions, index, `Deleted "${action.name}"`),
+          }),
+        ),
     );
   }
 
-  private buildUri(name: string): string {
-    const vault = encodeURIComponent(this.app.vault.getName());
-    const run = encodeURIComponent(toSlug(name));
-    return `obsidian://quick-actions?vault=${vault}&run=${run}`;
+  private modelRow(parent: HTMLElement, model: ModelConfig, index: number): void {
+    const { models } = this.plugin.settings;
+    const row = new Setting(parent).setName(model.name || "Unnamed model");
+    row.settingEl.addClass("quick-actions-row");
+    row.descEl.appendText(`${providerLabel(model.provider)} · ${model.model || "no model id"} · key `);
+    row.descEl.createSpan({ cls: "quick-actions-var", text: model.secret_id || "none" });
+    row.addExtraButton((b) => b.setIcon("pencil").setTooltip("Edit").onClick(() => this.editModel(model, model)));
+    row.addExtraButton((b) =>
+      b
+        .setIcon("ellipsis-vertical")
+        .setTooltip("More")
+        .onClick(() =>
+          showRowMenu(b.extraSettingsEl, {
+            extra: [
+              {
+                title: "Duplicate",
+                icon: "copy",
+                click: () => {
+                  models.splice(index + 1, 0, { ...model, name: `${model.name} copy` });
+                  this.save();
+                },
+              },
+            ],
+            index,
+            count: models.length,
+            onMove: (to) => {
+              moveItem(models, index, to);
+              this.save();
+            },
+            onDelete: () => this.deleteItem(models, index, `Deleted "${model.name}"`),
+          }),
+        ),
+    );
   }
 
-  private renderStep(container: HTMLElement, index: number) {
-    const step = this.draft.steps[index];
-    const stepEl = container.createDiv("quick-actions-step");
+  // Opens the editor on a draft. `existing` is null for a new item, which is only stored on Save.
+  private editAction(existing: Action | null, source: Action): void {
+    new ActionEditModal(this.app, this.plugin, source, (result) => {
+      if (existing) Object.assign(existing, result);
+      else this.plugin.settings.actions.push(result);
+      this.save();
+    }).open();
+  }
 
-    // Header: type dropdown + move/delete buttons
-    const header = new Setting(stepEl).setName(`Step ${index + 1}`);
+  private editModel(existing: ModelConfig | null, source: ModelConfig): void {
+    new ModelEditModal(this.app, source, existing === null, (result) => {
+      if (existing) Object.assign(existing, result);
+      else this.plugin.settings.models.push(result);
+      this.save();
+    }).open();
+  }
 
-    header.addDropdown((dropdown) => {
-      const types: StepType[] = ["prompt", "file_picker", "tasks_modal", "insert_in_section", "create_file", "choice", "open_file", "llm"];
-      for (const t of types) {
-        dropdown.addOption(t, STEP_TYPE_LABELS[t]);
-      }
-      dropdown.setValue(step.type);
-      dropdown.onChange((val) => {
-        if (val !== step.type) {
-          this.draft.steps[index] = defaultStepForType(val as StepType);
-          this.render();
-        }
-      });
+  private deleteItem<T>(list: T[], index: number, message: string): void {
+    const [removed] = list.splice(index, 1);
+    this.save();
+    const notice = new Notice("", UNDO_NOTICE_MS);
+    notice.messageEl.setText(`${message}. `);
+    const undo = notice.messageEl.createEl("a", { text: "Undo" });
+    undo.addEventListener("click", (evt) => {
+      evt.preventDefault();
+      notice.hide();
+      list.splice(Math.min(index, list.length), 0, removed);
+      this.save();
     });
-
-    if (index > 0) {
-      header.addButton((btn) =>
-        btn.setButtonText("\u2191").setTooltip("Move up").onClick(() => {
-          [this.draft.steps[index - 1], this.draft.steps[index]] = [this.draft.steps[index], this.draft.steps[index - 1]];
-          this.render();
-        }),
-      );
-    }
-    if (index < this.draft.steps.length - 1) {
-      header.addButton((btn) =>
-        btn.setButtonText("\u2193").setTooltip("Move down").onClick(() => {
-          [this.draft.steps[index], this.draft.steps[index + 1]] = [this.draft.steps[index + 1], this.draft.steps[index]];
-          this.render();
-        }),
-      );
-    }
-    header.addButton((btn) =>
-      btn.setButtonText("Delete").setWarning().onClick(() => {
-        this.draft.steps.splice(index, 1);
-        this.render();
-      }),
-    );
-
-    // Type-specific fields
-    this.renderStepFields(stepEl, index);
   }
 
-  private renderStepFields(container: HTMLElement, index: number) {
-    const step = this.draft.steps[index];
-
-    switch (step.type) {
-      case "prompt": {
-        new Setting(container).setName("Label").addText((t) =>
-          t.setValue(step.label).onChange((v) => { step.label = v; }),
-        );
-        new Setting(container).setName("Variable name").addText((t) =>
-          t.setValue(step.variable).onChange((v) => { step.variable = v; }),
-        );
-        new Setting(container).setName("Multi-line").addToggle((t) =>
-          t.setValue(step.multiline).onChange((v) => { step.multiline = v; }),
-        );
-        break;
-      }
-      case "file_picker": {
-        new Setting(container).setName("Variable name").addText((t) =>
-          t.setValue(step.variable).onChange((v) => { step.variable = v; }),
-        );
-        new Setting(container).setName("Folder").addText((t) => {
-          t.setPlaceholder("e.g. Task Lists/").setValue(step.folder).onChange((v) => { step.folder = v; });
-          new FolderSuggest(this.app, t.inputEl);
-        });
-        break;
-      }
-      case "tasks_modal": {
-        new Setting(container).setName("Variable name").addText((t) =>
-          t.setValue(step.variable).onChange((v) => { step.variable = v; }),
-        );
-        break;
-      }
-      case "insert_in_section": {
-        new Setting(container).setName("Target file path").addText((t) =>
-          t.setPlaceholder("e.g. {{file}} or Journal/Daily/D-{{date}}.md")
-            .setValue(step.target)
-            .onChange((v) => { step.target = v; }),
-        );
-        new Setting(container).setName("Section heading").addText((t) =>
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- contains markdown syntax, not a sentence
-          t.setPlaceholder("e.g. ## Log").setValue(step.section).onChange((v) => { step.section = v; }),
-        );
-        new Setting(container).setName("Position").addDropdown((d) =>
-          d.addOption("beginning", "Beginning").addOption("end", "End")
-            .setValue(step.position)
-            .onChange((v) => { step.position = v as "beginning" | "end"; }),
-        );
-        new Setting(container).setName("Format").addText((t) =>
-          t.setPlaceholder("e.g. - ({{time}}) {{entry}}")
-            .setValue(step.format)
-            .onChange((v) => { step.format = v; }),
-        );
-        new Setting(container).setName("Create file if missing").addToggle((t) =>
-          t.setValue(step.createIfMissing).onChange((v) => {
-            step.createIfMissing = v;
-            this.render();
-          }),
-        );
-        if (step.createIfMissing) {
-          new Setting(container).setName("Template path").addText((t) => {
-            t.setPlaceholder("e.g. Templates/Journal/daily-note.md")
-              .setValue(step.templatePath)
-              .onChange((v) => { step.templatePath = v; });
-            new FileSuggest(this.app, t.inputEl);
-          });
-        }
-        break;
-      }
-      case "create_file": {
-        new Setting(container).setName("File path").addText((t) =>
-          t.setPlaceholder("e.g. Inbox/{{timestamp}} - Fleeting.md")
-            .setValue(step.path)
-            .onChange((v) => { step.path = v; }),
-        );
-        new Setting(container).setName("Content").addTextArea((t) =>
-          t.setPlaceholder("File content with {{variables}}")
-            .setValue(step.content)
-            .onChange((v) => { step.content = v; }),
-        );
-        break;
-      }
-      case "choice": {
-        new Setting(container).setName("Label").addText((t) =>
-          t.setValue(step.label).onChange((v) => { step.label = v; }),
-        );
-        new Setting(container).setName("Variable name").addText((t) =>
-          t.setValue(step.variable).onChange((v) => { step.variable = v; }),
-        );
-        new Setting(container).setName("Options (one per line)").addTextArea((t) =>
-          t.setValue(step.options.join("\n")).onChange((v) => {
-            step.options = v.split("\n").filter((line) => line.trim() !== "");
-          }),
-        );
-        break;
-      }
-      case "open_file": {
-        new Setting(container).setName("Target file path").addText((t) =>
-          t.setPlaceholder("e.g. {{file}} or Journal/Daily/D-{{date}}.md")
-            .setValue(step.target)
-            .onChange((v) => { step.target = v; }),
-        );
-        new Setting(container).setName("Section (optional)").addText((t) =>
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- contains markdown syntax, not a sentence
-          t.setPlaceholder("e.g. ## Log")
-            .setValue(step.section)
-            .onChange((v) => { step.section = v; }),
-        );
-        break;
-      }
-      case "llm": {
-        const models = this.plugin.settings.models;
-        if (models.length === 0) {
-          new Setting(container).setName("Model").setDesc("No models configured. Add one in the models section above.");
-        } else {
-          new Setting(container).setName("Model").addDropdown((d) => {
-            d.addOption("", "(use first model)");
-            for (const m of models) {
-              d.addOption(m.name, m.name);
-            }
-            d.setValue(step.model || "");
-            d.onChange((v) => { step.model = v; });
-          });
-        }
-        new Setting(container).setName("Variable name").addText((t) =>
-          t.setValue(step.variable).onChange((v) => { step.variable = v; }),
-        );
-        new Setting(container).setName("System prompt").addTextArea((t) =>
-          t.setPlaceholder("System prompt with {{variables}}")
-            .setValue(step.system_prompt)
-            .onChange((v) => { step.system_prompt = v; }),
-        );
-        new Setting(container).setName("User prompt").addTextArea((t) =>
-          t.setPlaceholder("User prompt with {{variables}}")
-            .setValue(step.user_prompt)
-            .onChange((v) => { step.user_prompt = v; }),
-        );
-        break;
-      }
-    }
+  private save(): void {
+    void this.plugin.saveSettings().then(() => this.display());
   }
 }

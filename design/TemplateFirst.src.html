@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #1e1e1e; }
+    a { color: var(--text-accent); } a:hover { color: var(--text-accent-hover); }
+<!--OBSIDIAN_CSS-->
+<!--INCLUDE:_qa.css-->
+<!--INCLUDE:_qa2.css-->
+  </style>
+</helmet>
+<!--INCLUDE:_editor-top.html-->
+          <div style="display: flex; align-items: center; gap: var(--size-4-3);">
+            <input type="text" value="Draft Slipbox Note" style="font-size: var(--font-ui-large); font-weight: var(--font-semibold); background: transparent; box-shadow: none; padding-inline-start: 0; width: 360px;">
+            <span style="flex: 1;"></span>
+            <button class="qa-add-step">{{icon:play}}Test run</button>
+            <button class="clickable-icon" aria-label="Copy URI">{{icon:link}}</button>
+          </div>
+          <div class="qa-split">
+            <div class="qa-rail" style="flex-basis: 320px;">
+              <div class="qa-section-label">Result</div>
+              <div class="qa-blank is-active">
+                <span class="qa-step-icon">{{icon:file-plus}}</span>
+                <div class="qa-node-text"><div class="qa-node-title">New note</div><div class="qa-node-sub">Slipbox/{{timestamp}} - {{title}}</div></div>
+              </div>
+              <div class="qa-section-label">Blanks in the result</div>
+              <div class="qa-blank">
+                <span class="qa-pill">idea</span><span class="qa-arrowl">{{icon:arrow-left}}</span>
+                <span class="qa-source">{{icon:text-cursor-input}}Ask me</span>
+              </div>
+              <div class="qa-blank">
+                <span class="qa-pill">draft</span><span class="qa-arrowl">{{icon:arrow-left}}</span>
+                <span class="qa-source is-llm">{{icon:sparkles}}Opus</span>
+                <span class="qa-uses">from idea</span>
+              </div>
+              <div class="qa-blank">
+                <span class="qa-pill">title</span><span class="qa-arrowl">{{icon:arrow-left}}</span>
+                <span class="qa-source is-llm">{{icon:sparkles}}Haiku</span>
+                <span class="qa-uses">from draft, idea</span>
+              </div>
+              <div class="qa-blank">
+                <span class="qa-pill">source</span><span class="qa-arrowl">{{icon:arrow-left}}</span>
+                <span class="qa-source is-unset">{{icon:circle-alert}}Choose how to fill this</span>
+              </div>
+              <div class="qa-section-label">Then</div>
+              <div class="qa-blank">
+                <span class="qa-step-icon">{{icon:external-link}}</span>
+                <div class="qa-node-text"><div class="qa-node-title">Open the new note</div><div class="qa-node-sub">at ## Description</div></div>
+              </div>
+              <div style="padding: var(--size-4-3) var(--size-4-2) 0; font-size: var(--font-ui-smaller); color: var(--text-faint);">Order is worked out from what each blank needs: idea, then draft, then title.</div>
+            </div>
+            <div class="qa-pane">
+              <div class="qa-pane-header">
+                <span class="qa-step-icon">{{icon:file-plus}}</span>
+                <span class="qa-pane-title">New note</span>
+                <span class="qa-uses">Type <span class="qa-braces">{{</span> anywhere to make a blank</span>
+              </div>
+              <div class="qa-fields">
+                <div class="setting-item">
+                  <div class="setting-item-info"><div class="setting-item-name">Path</div></div>
+                  <div class="setting-item-control"><div class="qa-field" style="min-height: 0; width: 420px; padding-inline-end: 12px;">Slipbox/<span class="qa-pill is-builtin">{{icon:hash}}timestamp</span> - <span class="qa-pill">{{icon:sparkles}}title</span></div></div>
+                </div>
+                <div class="setting-item is-stacked">
+                  <div class="setting-item-info"><div class="setting-item-name">Content</div></div>
+                  <div class="setting-item-control">
+                    <div class="qa-field" style="width: 100%; min-height: 250px; font-family: var(--font-monospace); font-size: 12.5px;">---
+title: "<span class="qa-pill">{{icon:sparkles}}title</span>"
+aliases: ["<span class="qa-pill">{{icon:sparkles}}title</span>"]
+created: "<span class="qa-pill is-builtin">{{icon:calendar}}date</span>"
+tags: ["note/slipbox"]
+---
+
+# <span class="qa-pill">{{icon:sparkles}}title</span>
+
+## Description
+
+<span class="qa-pill">{{icon:sparkles}}draft</span>
+
+## Source
+
+<span class="qa-pill is-error">source</span>
+
+## Original idea
+
+<span class="qa-pill">{{icon:text-cursor-input}}idea</span><div class="qa-field-tools"><button class="clickable-icon" aria-label="Insert variable"><span class="qa-braces">{ }</span></button></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+<!--INCLUDE:_editor-bottom.html-->
+</x-dc>
+</body>
+</html>

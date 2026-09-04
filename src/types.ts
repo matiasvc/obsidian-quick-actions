@@ -1,4 +1,4 @@
-// Step type discriminated union
+// Step type discriminated union. Every JSON key here is persisted in data.json.
 
 export interface PromptStep {
   type: "prompt";
@@ -30,6 +30,7 @@ export interface InsertInSectionStep {
 
 export interface CreateFileStep {
   type: "create_file";
+  variable: string;
   path: string;
   content: string;
 }
@@ -59,16 +60,9 @@ export type Step = PromptStep | FilePickerStep | TasksModalStep | InsertInSectio
 
 export type StepType = Step["type"];
 
-export const STEP_TYPE_LABELS: Record<StepType, string> = {
-  prompt: "Prompt",
-  file_picker: "File Picker",
-  tasks_modal: "Tasks Modal",
-  insert_in_section: "Insert in Section",
-  create_file: "Create File",
-  choice: "Choice",
-  open_file: "Open File",
-  llm: "LLM",
-};
+export type ProducingStep = Extract<Step, { variable: string }>;
+
+export type OutputType = "text" | "file";
 
 export interface Action {
   id: string;
@@ -88,61 +82,6 @@ export interface QuickActionsSettings {
   models: ModelConfig[];
 }
 
-// Factory functions for default steps
-
-export function defaultPromptStep(): PromptStep {
-  return { type: "prompt", variable: "input", label: "Input:", multiline: false };
-}
-
-export function defaultFilePickerStep(): FilePickerStep {
-  return { type: "file_picker", variable: "file", folder: "" };
-}
-
-export function defaultTasksModalStep(): TasksModalStep {
-  return { type: "tasks_modal", variable: "task" };
-}
-
-export function defaultInsertInSectionStep(): InsertInSectionStep {
-  return {
-    type: "insert_in_section",
-    target: "",
-    section: "",
-    position: "end",
-    format: "",
-    createIfMissing: false,
-    templatePath: "",
-  };
-}
-
-export function defaultCreateFileStep(): CreateFileStep {
-  return { type: "create_file", path: "", content: "" };
-}
-
-export function defaultChoiceStep(): ChoiceStep {
-  return { type: "choice", variable: "choice", label: "Choose:", options: [] };
-}
-
-export function defaultOpenFileStep(): OpenFileStep {
-  return { type: "open_file", target: "", section: "" };
-}
-
-export function defaultLLMStep(): LLMStep {
-  return { type: "llm", variable: "llm_response", system_prompt: "", user_prompt: "", model: "" };
-}
-
-export function defaultStepForType(type: StepType): Step {
-  switch (type) {
-    case "prompt": return defaultPromptStep();
-    case "file_picker": return defaultFilePickerStep();
-    case "tasks_modal": return defaultTasksModalStep();
-    case "insert_in_section": return defaultInsertInSectionStep();
-    case "create_file": return defaultCreateFileStep();
-    case "choice": return defaultChoiceStep();
-    case "open_file": return defaultOpenFileStep();
-    case "llm": return defaultLLMStep();
-  }
-}
-
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
 }
@@ -150,8 +89,3 @@ export function generateId(): string {
 export function toSlug(name: string): string {
   return name.toLowerCase().replace(/ /g, "-");
 }
-
-export const DEFAULT_SETTINGS: QuickActionsSettings = {
-  actions: [],
-  models: [],
-};

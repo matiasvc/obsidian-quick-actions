@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #1e1e1e; }
+    a { color: var(--text-accent); } a:hover { color: var(--text-accent-hover); }
+<!--OBSIDIAN_CSS-->
+<!--INCLUDE:_qa.css-->
+<!--INCLUDE:_qa2.css-->
+<!--INCLUDE:_qa4.css-->
+<!--INCLUDE:_qa5.css-->
+    .RAIL5 { background: var(--background-modifier-hover); }
+    .RAIL5 .l3-out { color: var(--text-accent); }
+  </style>
+</helmet>
+<!--INCLUDE:_editor3-top.html-->
+          <div style="display: flex; align-items: center; gap: var(--size-4-3);">
+            <input type="text" value="Draft Slipbox Note" style="font-size: var(--font-ui-large); font-weight: var(--font-semibold); background: transparent; box-shadow: none; padding-inline-start: 0; width: 360px;">
+            <span style="flex: 1;"></span>
+            <button class="qa-add-step">{{icon:play}}Test run</button>
+            <button class="clickable-icon" aria-label="Copy URI">{{icon:link}}</button>
+          </div>
+
+          <div class="qa-split l3">
+<!--INCLUDE:_rail-slipbox.html-->
+            <div class="qa-pane" style="position: relative;">
+              <div class="l3-head">
+                <span class="qa-num">5</span>
+                <select class="dropdown"><option>Open file</option></select>
+                <span style="flex: 1;"></span>
+                <button class="clickable-icon" aria-label="More">{{icon:ellipsis}}</button>
+              </div>
+              <div class="l3-card">
+                <div class="l3-band is-in">
+                  <span class="qp-lead">In</span>
+                  <span class="qp is-file">note</span>
+                  <span class="qp is-off">idea</span>
+                  <span class="qp is-off">draft</span>
+                  <span class="qp is-off">title</span>
+                  <span class="qp is-off">date</span>
+                  <span class="qp is-off">time</span>
+                  <span class="qp is-off">timestamp</span>
+                </div>
+                <div class="l3-body">
+                  <div class="setting-item">
+                    <div class="setting-item-info"><div class="setting-item-name">File</div><div class="setting-item-description">A file from an earlier step, or a path.</div></div>
+                    <div class="setting-item-control"><div class="qa-field" style="width: 100%; width: 380px;"><span class="qp is-file">note</span></div></div>
+                  </div>
+                  <div class="setting-item">
+                    <div class="setting-item-info"><div class="setting-item-name">Scroll to</div><div class="setting-item-description">A heading in the file. Leave empty for the top.</div></div>
+                    <div class="setting-item-control"><input type="text" value="## Description"></div>
+                  </div>
+                </div>
+                <div class="l3-band is-out">
+                  <span class="qp-lead">Out</span>
+                  <span class="l3-hint">nothing · this step only opens the file</span>
+                </div>
+              </div>
+            </div>
+          </div>
+<!--INCLUDE:_editor-bottom.html-->
+</x-dc>
+</body>
+</html>

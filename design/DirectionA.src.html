@@ -1,0 +1,157 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #1e1e1e; }
+    a { color: var(--text-accent); } a:hover { color: var(--text-accent-hover); }
+<!--OBSIDIAN_CSS-->
+<!--INCLUDE:_qa.css-->
+  </style>
+</helmet>
+<div style="--qa-h: 1000px;">
+<!--INCLUDE:_frame-top.html-->
+<!--INCLUDE:_actions-list.html-->
+<!--INCLUDE:_frame-bottom.html-->
+    <div class="modal-container mod-dim" style="z-index: 100;">
+      <div class="modal-bg"></div>
+      <div class="modal qa-editor" style="height: 940px;">
+        <div class="modal-close-button clickable-icon">{{icon:x}}</div>
+        <div class="modal-header"><div class="modal-title">Edit action</div></div>
+        <div class="modal-content" style="display: flex; flex-direction: column; min-height: 0;">
+          <div style="flex: 1; min-height: 0; overflow: auto; padding-inline-end: var(--size-2-2);">
+            <div class="setting-item" style="border: none; background: transparent; padding: 0 0 var(--size-4-3);">
+              <div class="setting-item-info"><div class="setting-item-name">Name</div><div class="setting-item-description">Shown in the command palette as “Quick Actions: Draft Slipbox Note”.</div></div>
+              <div class="setting-item-control"><input type="text" value="Draft Slipbox Note" style="width: 260px;"></div>
+            </div>
+            <div class="qa-info">
+              <div class="qa-info-label">URI</div>
+              <div class="qa-info-value"><span class="qa-uri">obsidian://quick-actions?vault=Obsidian&amp;run=draft-slipbox-note</span><button class="clickable-icon" aria-label="Copy URI">{{icon:copy}}</button></div>
+              <div class="qa-info-label">Variables</div>
+              <div class="qa-info-value qa-vars">
+                <span class="qa-var">{{date}}</span><span class="qa-var">{{time}}</span><span class="qa-var">{{timestamp}}</span>
+                <span style="color: var(--text-faint); margin: 0 var(--size-2-1);">·</span>
+                <span class="qa-var">{{idea}}</span><span class="qa-var">{{draft}}</span><span class="qa-var">{{title}}</span>
+              </div>
+            </div>
+
+            <div class="qa-card">
+              <div class="qa-card-header">
+                <span class="qa-num">1</span>
+                <span class="qa-step-icon">{{icon:text-cursor-input}}</span>
+                <span class="qa-step-type">Prompt</span>
+                <span class="qa-step-summary">“Rough idea or observation:” · multi-line → <span class="qa-var">{{idea}}</span></span>
+                <div class="qa-card-actions">
+                  <button class="clickable-icon" aria-label="Move up">{{icon:arrow-up}}</button>
+                  <button class="clickable-icon" aria-label="Move down">{{icon:arrow-down}}</button>
+                  <button class="clickable-icon" aria-label="Duplicate">{{icon:copy}}</button>
+                  <button class="clickable-icon" aria-label="Delete">{{icon:trash-2}}</button>
+                  <button class="clickable-icon" aria-label="Expand">{{icon:chevron-right}}</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="qa-card is-open">
+              <div class="qa-card-header">
+                <span class="qa-num">2</span>
+                <span class="qa-step-icon is-llm">{{icon:sparkles}}</span>
+                <select class="dropdown"><option>LLM</option><option>Prompt</option><option>File picker</option><option>Tasks modal</option><option>Choice</option><option>Insert in section</option><option>Create file</option><option>Open file</option></select>
+                <span class="qa-step-summary"></span>
+                <div class="qa-card-actions">
+                  <button class="clickable-icon" aria-label="Move up">{{icon:arrow-up}}</button>
+                  <button class="clickable-icon" aria-label="Move down">{{icon:arrow-down}}</button>
+                  <button class="clickable-icon" aria-label="Duplicate">{{icon:copy}}</button>
+                  <button class="clickable-icon" aria-label="Delete">{{icon:trash-2}}</button>
+                  <button class="clickable-icon" aria-label="Collapse">{{icon:chevron-down}}</button>
+                </div>
+              </div>
+              <div class="qa-card-body">
+                <div class="setting-item">
+                  <div class="setting-item-info"><div class="setting-item-name">Model</div></div>
+                  <div class="setting-item-control"><select class="dropdown"><option>Opus</option><option>Sonnet</option><option>Haiku</option></select></div>
+                </div>
+                <div class="setting-item">
+                  <div class="setting-item-info"><div class="setting-item-name">Store response in</div><div class="setting-item-description">Later steps read it as <span class="qa-var">{{draft}}</span></div></div>
+                  <div class="setting-item-control"><input type="text" value="draft" style="width: 180px;"></div>
+                </div>
+                <div class="setting-item is-stacked">
+                  <div class="setting-item-info"><div class="setting-item-name">System prompt</div></div>
+                  <div class="setting-item-control"><textarea rows="5">You are helping draft a Zettelkasten permanent note (Slipbox note). Rewrite the rough idea as one clear, self-contained argument in the writer's own voice. Keep it under 200 words and do not add headings.</textarea></div>
+                </div>
+                <div class="setting-item is-stacked">
+                  <div class="setting-item-info"><div class="setting-item-name">User prompt</div></div>
+                  <div class="setting-item-control"><textarea rows="3">Rough idea:
+{{idea}}
+
+Draft the note body:</textarea></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="qa-card">
+              <div class="qa-card-header">
+                <span class="qa-num">3</span>
+                <span class="qa-step-icon is-llm">{{icon:sparkles}}</span>
+                <span class="qa-step-type">LLM</span>
+                <span class="qa-step-summary">Haiku · title from <span class="qa-var">{{draft}}</span> → <span class="qa-var">{{title}}</span></span>
+                <div class="qa-card-actions">
+                  <button class="clickable-icon" aria-label="Move up">{{icon:arrow-up}}</button>
+                  <button class="clickable-icon" aria-label="Move down">{{icon:arrow-down}}</button>
+                  <button class="clickable-icon" aria-label="Duplicate">{{icon:copy}}</button>
+                  <button class="clickable-icon" aria-label="Delete">{{icon:trash-2}}</button>
+                  <button class="clickable-icon" aria-label="Expand">{{icon:chevron-right}}</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="qa-card">
+              <div class="qa-card-header">
+                <span class="qa-num">4</span>
+                <span class="qa-step-icon">{{icon:file-plus}}</span>
+                <span class="qa-step-type">Create file</span>
+                <span class="qa-step-summary">Slipbox/{{timestamp}} - {{title}}</span>
+                <div class="qa-card-actions">
+                  <button class="clickable-icon" aria-label="Move up">{{icon:arrow-up}}</button>
+                  <button class="clickable-icon" aria-label="Move down">{{icon:arrow-down}}</button>
+                  <button class="clickable-icon" aria-label="Duplicate">{{icon:copy}}</button>
+                  <button class="clickable-icon" aria-label="Delete">{{icon:trash-2}}</button>
+                  <button class="clickable-icon" aria-label="Expand">{{icon:chevron-right}}</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="qa-card">
+              <div class="qa-card-header">
+                <span class="qa-num">5</span>
+                <span class="qa-step-icon">{{icon:external-link}}</span>
+                <span class="qa-step-type">Open file</span>
+                <span class="qa-step-summary">Slipbox/{{timestamp}} - {{title}} at ## Description</span>
+                <div class="qa-card-actions">
+                  <button class="clickable-icon" aria-label="Move up">{{icon:arrow-up}}</button>
+                  <button class="clickable-icon" aria-label="Move down">{{icon:arrow-down}}</button>
+                  <button class="clickable-icon" aria-label="Duplicate">{{icon:copy}}</button>
+                  <button class="clickable-icon" aria-label="Delete">{{icon:trash-2}}</button>
+                  <button class="clickable-icon" aria-label="Expand">{{icon:chevron-right}}</button>
+                </div>
+              </div>
+            </div>
+
+            <button class="qa-add-step">{{icon:plus}}Add step</button>
+          </div>
+          <div class="qa-footer">
+            <button>Cancel</button>
+            <button class="mod-cta">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

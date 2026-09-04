@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #1e1e1e; }
+    a { color: var(--text-accent); } a:hover { color: var(--text-accent-hover); }
+<!--OBSIDIAN_CSS-->
+<!--INCLUDE:_qa.css-->
+<!--INCLUDE:_qa2.css-->
+<!--INCLUDE:_qa4.css-->
+<!--INCLUDE:_qa5.css-->
+    .RAIL1 { background: var(--background-modifier-hover); }
+    .RAIL1 .l3-out { color: var(--text-accent); }
+  </style>
+</helmet>
+<!--INCLUDE:_editor3-top.html-->
+          <div style="display: flex; align-items: center; gap: var(--size-4-3);">
+            <input type="text" value="Draft Slipbox Note" style="font-size: var(--font-ui-large); font-weight: var(--font-semibold); background: transparent; box-shadow: none; padding-inline-start: 0; width: 360px;">
+            <span style="flex: 1;"></span>
+            <button class="qa-add-step">{{icon:play}}Test run</button>
+            <button class="clickable-icon" aria-label="Copy URI">{{icon:link}}</button>
+          </div>
+
+          <div class="qa-split l3">
+<!--INCLUDE:_rail-slipbox.html-->
+            <div class="qa-pane" style="position: relative;">
+              <div class="l3-head">
+                <span class="qa-num">1</span>
+                <select class="dropdown"><option>Ask me</option></select>
+                <span style="flex: 1;"></span>
+                <button class="clickable-icon" aria-label="More">{{icon:ellipsis}}</button>
+              </div>
+              <div class="l3-card">
+                <div class="l3-band is-in">
+                  <span class="qp-lead">In</span>
+                  <span class="qp is-off">date</span>
+                  <span class="qp is-off">time</span>
+                  <span class="qp is-off">timestamp</span>
+                  <span class="l3-hint">first step, nothing from above yet</span>
+                </div>
+                <div class="l3-body">
+                  <div class="setting-item">
+                    <div class="setting-item-info"><div class="setting-item-name">Question</div><div class="setting-item-description">Shown above the input box.</div></div>
+                    <div class="setting-item-control"><input type="text" value="Rough idea or observation:"></div>
+                  </div>
+                  <div class="setting-item">
+                    <div class="setting-item-info"><div class="setting-item-name">Multi-line</div><div class="setting-item-description">A larger box. Enter adds a line, Cmd-Enter submits.</div></div>
+                    <div class="setting-item-control"><div class="checkbox-container is-enabled"><input type="checkbox" checked></div></div>
+                  </div>
+                </div>
+                <div class="l3-band is-out">
+                  <span class="qp-lead">Out</span>
+                  <span class="qp">idea</span>
+                  <span class="l3-hint">what you typed · used by Opus, Haiku, Create file · click to rename</span>
+                </div>
+              </div>
+            </div>
+          </div>
+<!--INCLUDE:_editor-bottom.html-->
+</x-dc>
+</body>
+</html>

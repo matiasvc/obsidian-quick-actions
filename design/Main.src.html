@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #1e1e1e; }
+    a { color: var(--text-accent); } a:hover { color: var(--text-accent-hover); }
+<!--OBSIDIAN_CSS-->
+<!--INCLUDE:_qa.css-->
+  </style>
+</helmet>
+<div style="--qa-h: 1120px;">
+<!--INCLUDE:_frame-top.html-->
+<!--INCLUDE:_actions-list.html-->
+            <div class="setting-item" style="align-items: center;">
+              <div class="qa-grip">{{icon:grip-vertical}}</div>
+              <div class="setting-item-info">
+                <div class="setting-item-name">Draft Slipbox Note</div>
+                <div class="qa-chain">
+                  <span class="qa-chip">{{icon:text-cursor-input}}Prompt</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip is-llm">{{icon:sparkles}}Opus</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip is-llm">{{icon:sparkles}}Haiku</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:file-plus}}Create file</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:external-link}}Open file</span>
+                </div>
+              </div>
+              <div class="setting-item-control">
+                <button class="clickable-icon" aria-label="Edit">{{icon:pencil}}</button>
+                <button class="clickable-icon is-active" aria-label="More">{{icon:ellipsis-vertical}}</button>
+              </div>
+            </div>
+            <div class="setting-item" style="align-items: center;">
+              <div class="qa-grip">{{icon:grip-vertical}}</div>
+              <div class="setting-item-info">
+                <div class="setting-item-name">Quick Reference Note</div>
+                <div class="qa-chain">
+                  <span class="qa-chip">{{icon:text-cursor-input}}Prompt</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip is-llm">{{icon:sparkles}}Sonnet</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip is-llm">{{icon:sparkles}}Opus</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip is-llm">{{icon:sparkles}}Sonnet</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip is-llm">{{icon:sparkles}}Haiku</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:file-plus}}Create file</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:external-link}}Open file</span>
+                </div>
+              </div>
+              <div class="setting-item-control">
+                <button class="clickable-icon" aria-label="Edit">{{icon:pencil}}</button>
+                <button class="clickable-icon" aria-label="More">{{icon:ellipsis-vertical}}</button>
+              </div>
+            </div>
+            <div class="setting-item" style="align-items: center;">
+              <div class="qa-grip">{{icon:grip-vertical}}</div>
+              <div class="setting-item-info">
+                <div class="setting-item-name">Add to Log</div>
+                <div class="qa-chain">
+                  <span class="qa-chip">{{icon:file}}File picker</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:text-cursor-input}}Prompt</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:between-horizontal-start}}Insert in section</span>
+                </div>
+              </div>
+              <div class="setting-item-control">
+                <button class="clickable-icon" aria-label="Edit">{{icon:pencil}}</button>
+                <button class="clickable-icon" aria-label="More">{{icon:ellipsis-vertical}}</button>
+              </div>
+            </div>
+            <div class="setting-item" style="align-items: center;">
+              <div class="qa-grip">{{icon:grip-vertical}}</div>
+              <div class="setting-item-info">
+                <div class="setting-item-name">Journal Entry</div>
+                <div class="qa-chain">
+                  <span class="qa-chip">{{icon:text-cursor-input}}Prompt</span><span class="qa-arrow">{{icon:chevron-right}}</span>
+                  <span class="qa-chip">{{icon:file-plus}}Create file</span>
+                </div>
+              </div>
+              <div class="setting-item-control">
+                <button class="clickable-icon" aria-label="Edit">{{icon:pencil}}</button>
+                <button class="clickable-icon" aria-label="More">{{icon:ellipsis-vertical}}</button>
+              </div>
+            </div>
+
+            <div class="setting-item setting-item-heading">
+              <div class="setting-item-info">
+                <div class="setting-item-name">Models</div>
+                <div class="setting-item-description">LLM steps pick one of these. API keys live in Settings › Keychain and are referenced by secret ID.</div>
+              </div>
+              <div class="setting-item-control"><button>Add model</button></div>
+            </div>
+            <div class="setting-item" style="align-items: center;">
+              <div class="setting-item-info">
+                <div class="setting-item-name">Sonnet</div>
+                <div class="setting-item-description">Anthropic · claude-sonnet-4-6 · key <span class="qa-var" style="color: var(--text-muted);">anthropic-api-key</span></div>
+              </div>
+              <div class="setting-item-control">
+                <button class="clickable-icon" aria-label="Edit">{{icon:pencil}}</button>
+                <button class="clickable-icon" aria-label="More">{{icon:ellipsis-vertical}}</button>
+              </div>
+            </div>
+            <div class="setting-item" style="align-items: center;">
+              <div class="setting-item-info">
+                <div class="setting-item-name">Opus</div>
+                <div class="setting-item-description">Anthropic · claude-opus-4-6 · key <span class="qa-var" style="color: var(--text-muted);">anthropic-api-key</span></div>
+              </div>
+              <div class="setting-item-control">
+                <button class="clickable-icon" aria-label="Edit">{{icon:pencil}}</button>
+                <button class="clickable-icon" aria-label="More">{{icon:ellipsis-vertical}}</button>
+              </div>
+            </div>
+            <div class="setting-item" style="align-items: center;">
+              <div class="setting-item-info">
+                <div class="setting-item-name">Haiku</div>
+                <div class="setting-item-description">Anthropic · claude-haiku-4-5 · key <span class="qa-var" style="color: var(--text-muted);">anthropic-api-key</span></div>
+              </div>
+              <div class="setting-item-control">
+                <button class="clickable-icon" aria-label="Edit">{{icon:pencil}}</button>
+                <button class="clickable-icon" aria-label="More">{{icon:ellipsis-vertical}}</button>
+              </div>
+            </div>
+<!--INCLUDE:_frame-bottom.html-->
+    <div class="menu" style="position: absolute; top: 452px; left: 880px; z-index: 200;">
+      <div class="menu-item"><span class="menu-item-icon">{{icon:copy}}</span><span class="menu-item-title">Duplicate</span></div>
+      <div class="menu-item"><span class="menu-item-icon">{{icon:link}}</span><span class="menu-item-title">Copy URI</span></div>
+      <div class="menu-separator"></div>
+      <div class="menu-item"><span class="menu-item-icon">{{icon:arrow-up}}</span><span class="menu-item-title">Move up</span></div>
+      <div class="menu-item"><span class="menu-item-icon">{{icon:arrow-down}}</span><span class="menu-item-title">Move down</span></div>
+      <div class="menu-separator"></div>
+      <div class="menu-item is-warning"><span class="menu-item-icon">{{icon:trash-2}}</span><span class="menu-item-title">Delete</span></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

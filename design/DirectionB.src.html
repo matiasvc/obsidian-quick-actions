@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; background: #1e1e1e; }
+    a { color: var(--text-accent); } a:hover { color: var(--text-accent-hover); }
+<!--OBSIDIAN_CSS-->
+<!--INCLUDE:_qa.css-->
+  </style>
+</helmet>
+<div style="--qa-h: 780px;">
+<!--INCLUDE:_frame-top.html-->
+<!--INCLUDE:_actions-list.html-->
+<!--INCLUDE:_frame-bottom.html-->
+    <div class="modal-container mod-dim" style="z-index: 100;">
+      <div class="modal-bg"></div>
+      <div class="modal qa-editor" style="--dialog-width: 960px; height: 680px;">
+        <div class="modal-close-button clickable-icon">{{icon:x}}</div>
+        <div class="modal-content" style="display: flex; flex-direction: column; min-height: 0;">
+          <div style="display: flex; align-items: center; gap: var(--size-4-3);">
+            <input type="text" value="Draft Slipbox Note" style="font-size: var(--font-ui-large); font-weight: var(--font-semibold); background: transparent; box-shadow: none; padding-inline-start: 0; width: 360px;">
+            <span style="flex: 1;"></span>
+            <span class="qa-uri" style="max-width: 360px;">obsidian://quick-actions?vault=Obsidian&amp;run=draft-slipbox-note</span>
+            <button class="clickable-icon" aria-label="Copy URI">{{icon:copy}}</button>
+          </div>
+          <div class="qa-split">
+            <div class="qa-rail">
+              <div class="qa-section-label">Steps</div>
+              <div class="qa-rail-item">
+                <span class="qa-num">1</span><span class="qa-step-icon">{{icon:text-cursor-input}}</span>
+                <div class="qa-rail-text"><div class="qa-rail-title">Prompt</div><div class="qa-rail-sub">Rough idea or observation: → {{idea}}</div></div>
+              </div>
+              <div class="qa-rail-item is-active">
+                <span class="qa-num">2</span><span class="qa-step-icon is-llm">{{icon:sparkles}}</span>
+                <div class="qa-rail-text"><div class="qa-rail-title">LLM · Opus</div><div class="qa-rail-sub">Draft the note body → {{draft}}</div></div>
+                <span class="qa-grip" style="margin: 0;">{{icon:grip-vertical}}</span>
+              </div>
+              <div class="qa-rail-item">
+                <span class="qa-num">3</span><span class="qa-step-icon is-llm">{{icon:sparkles}}</span>
+                <div class="qa-rail-text"><div class="qa-rail-title">LLM · Haiku</div><div class="qa-rail-sub">Short title → {{title}}</div></div>
+              </div>
+              <div class="qa-rail-item">
+                <span class="qa-num">4</span><span class="qa-step-icon">{{icon:file-plus}}</span>
+                <div class="qa-rail-text"><div class="qa-rail-title">Create file</div><div class="qa-rail-sub">Slipbox/{{timestamp}} - {{title}}</div></div>
+              </div>
+              <div class="qa-rail-item">
+                <span class="qa-num">5</span><span class="qa-step-icon">{{icon:external-link}}</span>
+                <div class="qa-rail-text"><div class="qa-rail-title">Open file</div><div class="qa-rail-sub">at ## Description</div></div>
+              </div>
+              <div style="padding: var(--size-4-2) var(--size-4-2) 0;"><button class="qa-add-step">{{icon:plus}}Add step</button></div>
+              <div class="qa-section-label" style="margin-top: var(--size-4-2);">Variables at this step</div>
+              <div class="qa-vars" style="padding: 0 var(--size-4-2);">
+                <span class="qa-var">{{date}}</span><span class="qa-var">{{time}}</span><span class="qa-var">{{timestamp}}</span><span class="qa-var">{{idea}}</span>
+              </div>
+              <div class="qa-section-label">Defined by later steps</div>
+              <div class="qa-vars" style="padding: 0 var(--size-4-2);">
+                <span class="qa-var is-future">{{draft}}</span><span class="qa-var is-future">{{title}}</span>
+              </div>
+            </div>
+            <div class="qa-pane">
+              <div class="qa-pane-header">
+                <span class="qa-num">2</span>
+                <select class="dropdown"><option>LLM</option><option>Prompt</option><option>File picker</option><option>Tasks modal</option><option>Choice</option><option>Insert in section</option><option>Create file</option><option>Open file</option></select>
+                <span style="flex: 1;"></span>
+                <div class="qa-card-actions">
+                  <button class="clickable-icon" aria-label="Move up">{{icon:arrow-up}}</button>
+                  <button class="clickable-icon" aria-label="Move down">{{icon:arrow-down}}</button>
+                  <button class="clickable-icon" aria-label="Duplicate">{{icon:copy}}</button>
+                  <button class="clickable-icon" aria-label="Delete">{{icon:trash-2}}</button>
+                </div>
+              </div>
+              <div class="qa-fields">
+                <div class="setting-item">
+                  <div class="setting-item-info"><div class="setting-item-name">Model</div></div>
+                  <div class="setting-item-control"><select class="dropdown"><option>Opus</option><option>Sonnet</option><option>Haiku</option></select></div>
+                </div>
+                <div class="setting-item">
+                  <div class="setting-item-info"><div class="setting-item-name">Store response in</div><div class="setting-item-description">Later steps read it as <span class="qa-var">{{draft}}</span></div></div>
+                  <div class="setting-item-control"><input type="text" value="draft" style="width: 180px;"></div>
+                </div>
+                <div class="setting-item is-stacked">
+                  <div class="setting-item-info"><div class="setting-item-name">System prompt</div></div>
+                  <div class="setting-item-control"><textarea rows="9">You are helping draft a Zettelkasten permanent note (Slipbox note). Rewrite the rough idea as one clear, self-contained argument in the writer's own voice. Keep it under 200 words and do not add headings.</textarea></div>
+                </div>
+                <div class="setting-item is-stacked">
+                  <div class="setting-item-info"><div class="setting-item-name">User prompt</div></div>
+                  <div class="setting-item-control"><textarea rows="4">Rough idea:
+{{idea}}
+
+Draft the note body:</textarea></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="qa-footer" style="border-top: none; margin-top: 0;">
+            <button>Cancel</button>
+            <button class="mod-cta">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
