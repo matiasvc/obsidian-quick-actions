@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Setting, setIcon } from "obsidian";
+import { App, Modal, Notice, Platform, Setting, setIcon } from "obsidian";
 import { Action, Step, StepType } from "./types";
 import QuickActionsPlugin from "./main";
 import { FieldDef, STEP_DEFS, STEP_TYPES_IN_ORDER, convertStep, makeStep, outputOf, stepTitle } from "./steps";
@@ -69,7 +69,8 @@ export class ActionEditModal extends Modal {
 
   onOpen(): void {
     const { contentEl } = this;
-    this.modalEl.addClass("quick-actions-editor");
+    // mod-lg is Obsidian's full-sheet modal on phones; it has no desktop rules.
+    this.modalEl.addClass("quick-actions-editor", "mod-lg");
     this.headEl = contentEl.createDiv("quick-actions-editor-head");
     const split = contentEl.createDiv("quick-actions-split");
     this.railEl = split.createDiv("quick-actions-rail");
@@ -230,7 +231,7 @@ export class ActionEditModal extends Modal {
       pane.addClass("is-blank");
       pane.createDiv({
         cls: "quick-actions-pane-blank",
-        text: "Add a step on the left. Each step can use what the steps above it produced, and hands its own result down to the ones below.",
+        text: "Add a step to get started. Each step can use what the steps above it produced, and hands its own result down to the ones below.",
       });
       return;
     }
@@ -241,10 +242,12 @@ export class ActionEditModal extends Modal {
     const def = STEP_DEFS[step.type];
 
     const head = pane.createDiv("quick-actions-pane-head");
-    iconButton(head, "arrow-left", "Back to steps", () => {
-      this.paneOpen = false;
-      this.renderPane();
-    }, "quick-actions-back");
+    if (Platform.isPhone) {
+      iconButton(head, "arrow-left", "Back to steps", () => {
+        this.paneOpen = false;
+        this.modalEl.removeClass("is-pane-open");
+      });
+    }
     head.createSpan({ cls: "quick-actions-num", text: String(i + 1) });
     const select = head.createEl("select", { cls: "dropdown" });
     for (const type of STEP_TYPES_IN_ORDER) select.createEl("option", { text: STEP_DEFS[type].verb, value: type });
@@ -637,10 +640,8 @@ export class ActionEditModal extends Modal {
     const step = makeStep(type);
     if ("variable" in step) step.variable = uniqueName(step.variable, producedNames(this.steps));
     this.steps.push(step);
-    this.selected = this.steps.length - 1;
-    this.paneOpen = true;
     this.clearRun();
-    this.refreshAll();
+    this.select(this.steps.length - 1);
   }
 
   private changeType(i: number, type: StepType): void {
@@ -654,10 +655,8 @@ export class ActionEditModal extends Modal {
     const copy: Step = JSON.parse(JSON.stringify(this.steps[i]));
     if ("variable" in copy) copy.variable = uniqueName(copy.variable, producedNames(this.steps));
     this.steps.splice(i + 1, 0, copy);
-    this.selected = i + 1;
-    this.paneOpen = true;
     this.clearRun();
-    this.refreshAll();
+    this.select(i + 1);
   }
 
   private deleteStep(i: number): void {

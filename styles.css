@@ -370,7 +370,8 @@
 }
 
 /* ---- Plain form modals (model editor) ---- */
-.quick-actions-form .setting-item-control input[type="text"] {
+/* Fixed widths are desktop only; on phones Obsidian stacks the row and makes the input full width. */
+body:not(.is-phone) .quick-actions-form .setting-item-control input[type="text"] {
   width: 220px;
 }
 .quick-actions-footer {
@@ -537,9 +538,6 @@
 .quick-actions-pane-head .clickable-icon {
   --icon-size: var(--icon-s);
 }
-.quick-actions-back {
-  display: none;
-}
 .quick-actions-seg {
   display: inline-flex;
   background: var(--background-modifier-hover);
@@ -610,10 +608,10 @@
   justify-content: stretch;
   margin-top: var(--size-2-2);
 }
-.quick-actions-card-body .setting-item-control input[type="text"] {
+body:not(.is-phone) .quick-actions-card-body .setting-item-control input[type="text"] {
   width: 300px;
 }
-.quick-actions-card-body .setting-item:not(.is-stacked) .quick-actions-field {
+body:not(.is-phone) .quick-actions-card-body .setting-item:not(.is-stacked) .quick-actions-field {
   width: 380px;
 }
 .quick-actions-card-body .setting-item:not(.is-stacked) .setting-item-control {
@@ -698,18 +696,11 @@
 }
 
 /* ---- Phone: one column, the step list or the selected step ---- */
-.is-phone .modal.quick-actions-editor {
-  height: var(--dialog-max-height);
-}
 .is-phone .quick-actions-editor-head {
   flex-wrap: wrap;
 }
 .is-phone .quick-actions-editor-head input.quick-actions-name {
   flex: 1 1 100%;
-  width: 100%;
-}
-.is-phone .quick-actions-split {
-  flex-direction: column;
 }
 .is-phone .quick-actions-rail {
   flex: 1;
@@ -718,27 +709,10 @@
 .is-phone .quick-actions-rail-item {
   padding: var(--size-4-3);
 }
-.is-phone .quick-actions-editor.is-pane-open .quick-actions-rail,
+.is-phone .is-pane-open .quick-actions-rail,
 .is-phone .quick-actions-editor:not(.is-pane-open) .quick-actions-pane {
   display: none;
 }
 .is-phone .quick-actions-pane {
   padding: var(--size-4-3);
-}
-.is-phone .quick-actions-back {
-  display: flex;
-}
-/* Text fields go under their label; toggles and dropdowns stay on the right. */
-.is-phone .quick-actions-card-body .setting-item:has(.quick-actions-field, input[type="text"]) {
-  flex-direction: column;
-  align-items: stretch;
-}
-.is-phone .quick-actions-card-body .setting-item:has(.quick-actions-field, input[type="text"]) .setting-item-control {
-  justify-content: stretch;
-  margin-top: var(--size-2-2);
-}
-.is-phone .quick-actions-card-body .setting-item-control input[type="text"],
-.is-phone .quick-actions-card-body .setting-item:not(.is-stacked) .quick-actions-field,
-.is-phone .quick-actions-form .setting-item-control input[type="text"] {
-  width: 100%;
 }
