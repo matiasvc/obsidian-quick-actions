@@ -47,6 +47,8 @@ export class ActionEditModal extends Modal {
   private draft: Action;
   private onSave: (action: Action) => void;
   private selected = 0;
+  // Phones show one column: the step list, or the selected step with a back button.
+  private paneOpen = false;
   private run: RunResult | null = null;
   private view: "edit" | "run" = "edit";
   private running = false;
@@ -211,6 +213,7 @@ export class ActionEditModal extends Modal {
 
   private select(i: number): void {
     this.selected = i;
+    this.paneOpen = true;
     if (this.view === "run" && !this.resultFor(i)) this.view = "edit";
     this.renderHead();
     this.renderRail();
@@ -222,6 +225,7 @@ export class ActionEditModal extends Modal {
     pane.empty();
     this.fields = [];
     this.tracker.reset();
+    this.modalEl.toggleClass("is-pane-open", this.paneOpen);
     if (this.steps.length === 0) {
       pane.addClass("is-blank");
       pane.createDiv({
@@ -237,6 +241,10 @@ export class ActionEditModal extends Modal {
     const def = STEP_DEFS[step.type];
 
     const head = pane.createDiv("quick-actions-pane-head");
+    iconButton(head, "arrow-left", "Back to steps", () => {
+      this.paneOpen = false;
+      this.renderPane();
+    }, "quick-actions-back");
     head.createSpan({ cls: "quick-actions-num", text: String(i + 1) });
     const select = head.createEl("select", { cls: "dropdown" });
     for (const type of STEP_TYPES_IN_ORDER) select.createEl("option", { text: STEP_DEFS[type].verb, value: type });
@@ -630,6 +638,7 @@ export class ActionEditModal extends Modal {
     if ("variable" in step) step.variable = uniqueName(step.variable, producedNames(this.steps));
     this.steps.push(step);
     this.selected = this.steps.length - 1;
+    this.paneOpen = true;
     this.clearRun();
     this.refreshAll();
   }
@@ -646,6 +655,7 @@ export class ActionEditModal extends Modal {
     if ("variable" in copy) copy.variable = uniqueName(copy.variable, producedNames(this.steps));
     this.steps.splice(i + 1, 0, copy);
     this.selected = i + 1;
+    this.paneOpen = true;
     this.clearRun();
     this.refreshAll();
   }
@@ -659,6 +669,7 @@ export class ActionEditModal extends Modal {
       new Notice(`Step ${i + 1} deleted. Steps ${names} still use {{${out.name}}} and now need a new source.`);
     }
     this.selected = Math.max(0, Math.min(i, this.steps.length - 1));
+    this.paneOpen = false;
     this.clearRun();
     this.refreshAll();
   }
