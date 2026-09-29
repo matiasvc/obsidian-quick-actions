@@ -184,10 +184,10 @@ BOARDS = {
         ]),
         out=out_none("nothing · this step writes to the file")),
     # Add Task to Task List
-    "StepTasks": dict(active=2, rail="_rail-task.html", head=head("Add Task to Task List"), type="Tasks modal",
+    "StepTasks": dict(active=2, rail="_rail-task.html", head=head("Add Task to Task List"), type="Quick task",
         inputs=pills(["file"], BUILTINS, files=["file"]),
-        body=row("Opens the Tasks plugin dialog", "", "The task line it builds becomes this step's output. Nothing to configure. Needs the Tasks plugin."),
-        out=out("task", "the task line · used by Insert in section")),
+        body=row("Opens the Quick Tasks add box", "", "The task note it creates becomes this step's output. Needs the Quick Tasks plugin."),
+        out=out("task", "the new task note · used by Insert in section")),
     # Choice, on an example action
     "StepChoice": dict(active=1, rail="_rail-choice.html", head=head("Log something"), type="Choice",
         inputs=pills([], BUILTINS) + FIRST,
