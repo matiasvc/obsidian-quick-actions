@@ -3,7 +3,7 @@ import { Action, Step, ModelConfig, OutputType } from "./types";
 import { STEP_DEFS } from "./steps";
 import { resolveTemplate } from "./variables";
 import { callLLM, findModel } from "./llm";
-import { findQuickTasks, taskSummary } from "./quicktasks";
+import { findQuickTasks } from "./quicktasks";
 import { openPromptModal, openFilePickerModal, openChoiceModal } from "./modals";
 
 declare const window: Window & { moment: typeof import("moment") };
@@ -145,7 +145,7 @@ async function executeStep(app: App, step: Step, vars: Record<string, string>, m
       if (!write) {
         // A placeholder with the real shape, so later steps can preview "![[{{task}}]]".
         const result = produce(ok(resolved), step, `${found.api.folder}/T-new.md`, vars);
-        result.note = `Would create task ${taskSummary(qa)}`;
+        result.note = `Would create task ${found.api.summary(qa)}`;
         return result;
       }
       try {

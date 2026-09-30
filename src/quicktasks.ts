@@ -2,16 +2,12 @@
 // contract is the api object on its plugin instance, mirrored here and checked by version.
 import type { App } from "obsidian";
 
-export const QUICK_TASKS_API_VERSION = 1;
+export const QUICK_TASKS_API_VERSION = 2;
 
-// What the quick-add box parsed. Passed back to createTask untouched; read only for the summary.
+// What the quick-add box parsed. Opaque apart from the title: handed back to createTask and
+// summary untouched, so Quick Tasks alone knows its fields.
 export interface QuickTaskDraft {
   title: string;
-  due: string | null;
-  priority: "high" | "medium" | "low" | "none";
-  tags: string[];
-  project: string | null;
-  repeat: { text: string } | null;
 }
 
 export interface QuickTasksApi {
@@ -19,6 +15,8 @@ export interface QuickTasksApi {
   folder: string;
   askTask(opts: { project?: string; prefill?: string }): Promise<QuickTaskDraft | null>;
   createTask(qa: QuickTaskDraft): Promise<string>;
+  // “Pay rent” · due Thu, Sep 5 · High · #home · @Garden · Every week
+  summary(qa: QuickTaskDraft): string;
 }
 
 interface AppWithPlugins {
@@ -36,15 +34,4 @@ export function findQuickTasks(app: App): { api: QuickTasksApi } | { error: stri
     return { error: `Quick Tasks API version ${String(api.version)}, this plugin expects ${QUICK_TASKS_API_VERSION}` };
   }
   return { api: api as QuickTasksApi };
-}
-
-// “Pay rent” · due 2026-09-05 · high · #home · @Garden · every week
-export function taskSummary(qa: QuickTaskDraft): string {
-  const parts = [`“${qa.title}”`];
-  if (qa.due) parts.push(`due ${qa.due}`);
-  if (qa.priority !== "none") parts.push(qa.priority);
-  for (const tag of qa.tags) parts.push(`#${tag}`);
-  if (qa.project) parts.push(`@${qa.project}`);
-  if (qa.repeat) parts.push(qa.repeat.text);
-  return parts.join(" · ");
 }
