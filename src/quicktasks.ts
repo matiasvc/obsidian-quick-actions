@@ -2,7 +2,7 @@
 // contract is the api object on its plugin instance, mirrored here and checked by version.
 import type { App } from "obsidian";
 
-export const QUICK_TASKS_API_VERSION = 2;
+export const QUICK_TASKS_API_VERSION = 3;
 
 // What the quick-add box parsed. Opaque apart from the title: handed back to createTask and
 // summary untouched, so Quick Tasks alone knows its fields.
@@ -13,7 +13,9 @@ export interface QuickTaskDraft {
 export interface QuickTasksApi {
   version: number;
   folder: string;
+  // `project` is the note the task gets embedded in, a name or vault path.
   askTask(opts: { project?: string; prefill?: string }): Promise<QuickTaskDraft | null>;
+  // Writes the task note and embeds it in its project's note, then resolves with the task's path.
   createTask(qa: QuickTaskDraft): Promise<string>;
   // “Pay rent” · due Thu, Sep 5 · High · #home · @Garden · Every week
   summary(qa: QuickTaskDraft): string;

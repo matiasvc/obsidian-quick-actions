@@ -31,7 +31,7 @@ Steps are grouped by what they do. Steps that produce a value name their output;
 
 A `file` output is a vault path. **Insert in section** and **Open file** take a file as their target, so a `Create file` step followed by `Open file` with target `{{note}}` opens the note that was just created.
 
-**Quick task** produces the new task note, so `Insert in section` with the text `![[{{task}}]]` embeds it in another note as Quick Tasks' live widget, and `Open file` with target `{{task}}` opens it. Its **Project** field (a note from an earlier step, or a path) becomes the task's `project` link; **Prefill** is typed into the box before you start. Without the Quick Tasks plugin the step fails with a notice and the editor shows a warning on the step. A test run opens the box and reports what it would create without writing the note.
+**Quick task** produces the new task note, and `Open file` with target `{{task}}` opens it. Its **Project** field (a note from an earlier step, or a path) is the note Quick Tasks embeds the task in, under that note's `# Tasks` heading, so no `Insert in section` step is needed for it. `Insert in section` with the text `![[{{task}}]]` still embeds the task in any other note as Quick Tasks' live widget. **Prefill** is typed into the box before you start. Without the Quick Tasks plugin the step fails with a notice and the editor shows a warning on the step. A test run opens the box and reports what it would create without writing the note.
 
 ## Variables
 
