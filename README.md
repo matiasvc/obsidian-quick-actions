@@ -4,34 +4,40 @@ Configurable quick actions for common vault operations. Build custom commands fr
 
 ## Features
 
-- **Composable step pipelines** - chain steps into a single command
-- **Visible data flow** - every step shows what it can use from the steps above it and what it hands down; variables are pills, not text you have to remember
-- **Test runs** - run an action up to any step with real prompts and models, see every captured value, and write nothing
-- **LLM integration** - call Anthropic or OpenAI models as steps, with the reply available to later steps
-- **Multiple named models** - configure several models and choose per step which to use
-- **File creation and editing** - create new files or insert text under a heading in an existing file
-- **Interactive inputs** - ask for text, pick a file from a folder, present a list of options, or type a task into the Quick Tasks box
-- **Auto-registered commands** - every action becomes an Obsidian command, reachable from the command palette, a hotkey, or its URI
-- **Mobile support** - works on desktop and mobile (the pill editor falls back to a plain text field on mobile)
+- **Composable step pipelines.** Chain steps into a single command.
+- **Visible data flow.** Every step shows what it can use from the steps above it and what it hands down. Variables are pills, not text you have to remember, and filters shape them on the way in.
+- **Test runs.** Run an action up to any step with real prompts and models, see every captured value and where an insert would land, and write nothing.
+- **Safe runs.** One notice shows progress and can cancel. A failed step offers Retry with everything already typed or generated, and a finished run offers Undo.
+- **LLM integration.** Call Anthropic or OpenAI models as steps, keep the reply as one value or as several fields from one call.
+- **Web pages.** Fetch a page as Markdown so a model reads the page itself, not just its URL.
+- **File creation and editing.** Create new files or insert text under a heading in an existing file.
+- **Interactive inputs.** Ask for text, pick a file from a folder, present a list of options, or type a task into the Quick Tasks box. Start from the text you selected or copied.
+- **Commands everywhere.** Every action becomes an Obsidian command with its own icon, reachable from the command palette, a hotkey, the ribbon, the phone toolbar, the **Run a quick action** launcher, or its URI.
+- **Mobile support.** Works on desktop and mobile. The pill editor falls back to a plain text field on mobile.
 
 ## Step types
 
-Steps are grouped by what they do. Steps that produce a value name their output; later steps use it as `{{name}}`.
+Steps are grouped by what they do. Steps that produce a value name their output, and later steps use it as `{{name}}`.
 
 | Group | Step | What it does | Output |
 |---|---|---|---|
-| Ask | **Ask me** | A question with a text box (single or multi-line) | text |
+| Ask | **Ask me** | A question with a text box (single or multi-line). **Default** fills the box when it opens, for example with `{{selection}}` | text |
 | Ask | **Choice** | Pick one option from a list | text |
-| Ask | **Pick a file** | Choose a note from a folder | file |
+| Ask | **Pick a file** | Choose a note from a folder. **Question** is shown in the search box, files you picked recently come first, and each row shows its folder and last edit | file |
 | Ask | **Quick task** | Type a task into the [Quick Tasks](https://github.com/matiasvc/obsidian-quick-tasks) quick-add box (dates, `!priority`, `#tags`, `@project`, repeat phrases) and create its note. Optional project link and prefilled text. Requires Quick Tasks | file |
-| Generate | **Ask a model** | Send a system and user prompt to a configured model, keep the reply | text |
-| Do | **Create file** | Write a new note from a templated path and content | file |
+| Fetch and generate | **Fetch page** | Download the page at a URL, or the first URL in a value, as Markdown with its title. Text without a URL passes through, or stops the action if you choose | text (page and its title) |
+| Fetch and generate | **Ask a model** | Send a system and user prompt to a configured model. **Reply** is one value, or several named fields the model fills in one call | text (one or more) |
+| Do | **Create file** | Write a new note from a templated path and content. Missing folders are created | file |
 | Do | **Insert in section** | Add text under a heading in a note, at the start or end of the section | nothing |
-| Do | **Open file** | Open a note, optionally scrolled to a heading | nothing |
+| Do | **Open file** | Open a note in the current tab, a new tab or a split, optionally with the cursor under a heading | nothing |
 
 A `file` output is a vault path. **Insert in section** and **Open file** take a file as their target, so a `Create file` step followed by `Open file` with target `{{note}}` opens the note that was just created.
 
 **Quick task** produces the new task note, and `Open file` with target `{{task}}` opens it. Its **Project** field (a note from an earlier step, or a path) is the note Quick Tasks embeds the task in, under that note's `# Tasks` heading, so no `Insert in section` step is needed for it. `Insert in section` with the text `![[{{task}}]]` still embeds the task in any other note as Quick Tasks' live widget. **Prefill** is typed into the box before you start. Without the Quick Tasks plugin the step fails with a notice and the editor shows a warning on the step. A test run opens the box and reports what it would create without writing the note.
+
+**Ask a model** with several values lists each field with a name, a description the model reads, and optional choices. A field with choices can only be one of them, so a classifier can't invent a category. Anthropic models answer through forced tool use and OpenAI models through JSON schema output.
+
+**Insert in section** writes through the note's editor when the note is open for editing, so the entry lands next to anything you have typed and not saved yet. Otherwise it changes the file in one step with `vault.process`.
 
 ## Variables
 
@@ -44,19 +50,48 @@ Every templated field (paths, content, prompts, targets, sections) accepts `{{na
 | `{{date}}` | Current date as `YYYY-MM-DD` |
 | `{{time}}` | Current time as `HH:mm` |
 | `{{timestamp}}` | Current timestamp as `YYYYMMDDHHmmss` |
+| `{{selection}}` | The text selected in the note you were in when the action started |
+| `{{clipboard}}` | What you last copied. Only read when a step uses it |
+| `{{active_note}}` | The path of the note you were in (a file) |
+| `{{active_title}}` | That note's name |
 
-**Step outputs** - each producing step names its output in the **Out** band. Click the name to rename it; every later use is rewritten. Names must be a single word (letters, digits, underscores) that no other step produces.
+**Step outputs.** Each producing step names its outputs in the **Out** band. Click a name to rename it, and every later use is rewritten. Names must be a single word (letters, digits, underscores) that nothing else produces.
+
+**Filters** change a value where it is used: `{{category|slug}}`. Click a pill in a field to add or remove them, or on mobile use the `{ }` menu with the cursor after a value. They apply in order, so `{{reply|first_line|trim}}` works.
+
+| Filter | Does | Example |
+|---|---|---|
+| `slug` | Lowercase words joined by dashes, for tags | `Blog Post` → `blog-post` |
+| `lower` | Lowercase | `Paper` → `paper` |
+| `trim` | No spaces or blank lines at either end | `  Paper  ` → `Paper` |
+| `first_line` | The first line that has text | |
+| `filename` | Safe to use in a file name | `io_uring: why it exists` → `io_uring - why it exists` |
+| `yaml` | Escaped for a double-quoted frontmatter value | `The "what" effect` → `The \"what\" effect` |
+| `link` | A file as a link, in the vault's link format | `Reference Notes/ENet.md` → `[[ENet]]` |
+
+Two kinds of cleaning happen without a filter. In a path (the **Create file** path, and the file and template fields of **Insert in section** and **Open file**), values typed into Ask me, generated by a model or fetched from a page, and the selection, clipboard, note title and time, are made safe for a file name. So a colon or slash in a generated title can't fail the step or add a folder, and `{{time}}` becomes `13.52`. Values from Choice and Pick a file keep their slashes, and the path is normalized, so a stray `//` does no harm. In the frontmatter block of a **Create file** content, each value is escaped for the quotes around it, so a title with a double quote still gives valid YAML. Model replies are trimmed.
 
 ## The action editor
 
 The editor is a two-pane modal: the steps on the left, the selected step on the right.
 
-- **In band** - every value this step could use. Tinted pills are used by this step, outlined ones are available, blue ones are files.
-- **Fields** - what the step needs. Templated fields hold pills.
-- **Out band** - what this step produces, and which later steps use it.
-- **Add step** - a grouped picker (Ask, Generate, Do). Steps reorder by drag or from the `⋯` menu.
-- **Test run** / **Run to here** - runs the steps up to the selected one. Prompts and models are real, nothing is written to the vault. The rail shows each captured value, and the **Last run** view of a step shows the prompt that was sent with every substituted value marked, what it produced, and what the next step would create. **Run step N too** continues the same run without asking again. **Discard run** returns to editing.
-- **Save** (or Cmd-Enter) writes the action; **Cancel** discards every change.
+- **Header.** The icon button sets the action's icon and whether it gets a ribbon button. The link button copies its URI.
+- **Step name.** Next to the step type. Shown in the rail, in the settings list and wherever the step is mentioned. A model step without a name reads as its model and output, like `Sonnet → title`.
+- **In band.** Every value this step could use. Tinted pills are used by this step, outlined ones are available, blue ones are files.
+- **Fields.** What the step needs. Templated fields hold pills. A multi-line field longer than six lines shows its first four until you click into it or on **Show all**.
+- **Out band.** What this step produces, and which later steps use it.
+- **Add step.** A grouped picker (Ask, Fetch and generate, Do). Steps reorder by drag or from the `⋯` menu.
+- **Test run** / **Run to here.** Runs the steps up to the selected one. Prompts, page fetches and models are real, nothing is written to the vault. The rail shows each captured value, and the **Last run** view of a step shows the prompt that was sent with every substituted value marked, what it produced, the lines around where an insert would land, and what the next step would create. **Run step N too** continues the same run without asking again. **Discard run** returns to editing.
+- **Save** (or Cmd/Ctrl-Enter) writes the action. **Cancel**, Esc and the close button ask before throwing away changes, and a second Esc discards.
+
+## Running actions
+
+- **Launcher.** The **Run a quick action** command lists every action, most recently run first. Give it one hotkey or one phone toolbar button instead of one per action.
+- **Prompts** show the action's name, the question and the key that saves. Text in a prompt closed by accident comes back the next time it opens, for a day. Cancel throws it away.
+- **Progress.** While steps run without you, one notice shows the step, what it is doing, the seconds so far and a Cancel link. A model call already sent finishes, and the run stops after it.
+- **Failure.** The notice names the step and the error, with **Retry step N**, which reruns from that step with every value already captured, and **Copy what you typed**.
+- **Undo.** The finishing notice offers Undo for ten seconds, and a failed or cancelled run offers it too. It covers everything the run wrote, including what it wrote before a Retry. Inserted lines come out, created notes go to the trash, and folders the run created go too when empty. Quick Tasks notes are left to Quick Tasks.
+- **URI.** `obsidian://quick-actions?vault=<vault>&run=<action id>` runs an action, and **Copy URI** copies that form. An action's id never changes, so the link survives a rename. The old form with the name's slug still works. Any other parameter fills the Ask me, Choice or Pick a file step that produces that name, and that step doesn't ask, so `&thought=Call%20the%20garage` captures a fleeting note in one go from a phone shortcut.
 
 ## LLM integration
 
@@ -64,21 +99,21 @@ The editor is a two-pane modal: the steps on the left, the selected step on the 
 
 1. Store the API key in **Settings > Keychain**.
 2. Go to **Settings > Quick Actions > Models** and click **Add model**.
-3. Give it a name (this is what steps show), choose a provider, enter the model ID, and pick the Keychain secret.
-4. Press **Test** to confirm the key and model ID; the reply time and model ID appear inline, or the provider's error.
+3. Give it a name (this is what steps show), choose a provider, pick the Keychain secret, and pick the model ID from the provider's list or type one.
+4. Press **Test** to confirm the key and model ID. The reply time and model ID appear inline, or the provider's error.
 
-Several models can be configured (a fast one for classification, a capable one for drafting) and each **Ask a model** step picks one. A step with no model set uses the first one.
+Several models can be configured (a fast one for classification, a capable one for drafting) and each **Ask a model** step picks one. A step with no model set uses the first one. Model names are unique. Renaming a model updates the steps that use it. A step whose model was deleted is marked red in the editor and stops the action instead of running on another model.
 
 ### Supported providers
 
 | Provider | API | Auth header |
 |---|---|---|
-| **Anthropic** | Messages API (`/v1/messages`) | `x-api-key` |
-| **OpenAI** | Chat Completions API (`/v1/chat/completions`) | `Authorization: Bearer` |
+| **Anthropic** | Messages API (`/v1/messages`), model list (`/v1/models`) | `x-api-key` |
+| **OpenAI** | Chat Completions API (`/v1/chat/completions`), model list (`/v1/models`) | `Authorization: Bearer` |
 
 ## Starters
 
-An empty settings page offers three starters that open a prefilled editor: **Capture a note** (ask, create a note, open it), **Append to a log** (pick a log, ask for an entry, insert it under a heading), and **Draft with a model** (ask for an idea, have a model draft it, save and open the draft). Nothing is stored until you save.
+An empty settings page offers three starters that open a prefilled editor: **Capture a note** (ask, create a note, open it), **Append to a log** (pick a log, ask for an entry, insert it under a heading), and **Draft with a model** (ask for an idea, starting from the selection, have a model draft it, save and open the draft). Nothing is stored until you save.
 
 ## Examples
 
@@ -100,6 +135,15 @@ An empty settings page offers three starters that open a prefilled editor: **Cap
 | 4 | Create file | Path `Slipbox/{{timestamp}} - {{title}}`, content uses `{{title}}`, `{{draft}}`, `{{idea}}`, output `note` |
 | 5 | Open file | Target `{{note}}`, scrolled to `## Description` |
 
+### Reference note from a link
+
+| Step | Type | Details |
+|---|---|---|
+| 1 | Ask me | "Paste a URL or describe the source:", output `source` |
+| 2 | Fetch page | URL `{{source}}`, outputs `page` and `page_title` |
+| 3 | Ask a model | User prompt `{{page}}`, several values: `category` (choices Article, Paper, Video), `title`, `body` |
+| 4 | Create file | Path `Reference Notes/{{timestamp}} - {{category}} - {{title}}`, tag `{{category|slug}}`, body `{{body}}` |
+
 ## Development
 
 ```bash
@@ -107,7 +151,7 @@ npm install
 npm run build   # bundle to main.js
 npm run deploy  # build, copy into $OBSIDIAN_VAULT (default ~/Obsidian) and reload the plugin
 npm run lint    # eslint with the obsidianmd rules
-npm test        # unit tests for the pure modules (variables, step table)
+npm test        # unit tests for the pure modules (variables, filters, inserts, step table)
 ```
 
 ## Installation
@@ -121,7 +165,7 @@ npm install
 npm run build
 ```
 
-Then copy `main.js`, `manifest.json`, and `styles.css` to your vault's `.obsidian/plugins/obsidian-quick-actions/` directory and enable the plugin in Settings > Community plugins.
+Then copy `main.js`, `manifest.json`, and `styles.css` to your vault's `.obsidian/plugins/quick-actions/` directory and enable the plugin in Settings > Community plugins.
 
 ## License
 
