@@ -1,16 +1,21 @@
 // The step table: the one place that knows what each step type is, what it
 // produces, and which fields it edits.
-import { ModelConfig, OutputType, Step, StepType } from "./types";
+import { LLMStep, ModelConfig, OutputType, Step, StepType } from "./types";
 import { uniqueName } from "./variables";
 
 export type StepGroup = "ask" | "generate" | "do";
 
-// text: plain input. line/block/file: pill fields (variables allowed; file is a
+// text: plain input. line/block/file: pill fields (variables allowed, and file is a
 // single line with a file-typed hint). folder: plain input with folder
-// suggestions. options: the reorderable option list.
-export type FieldKind = "text" | "line" | "block" | "file" | "folder" | "toggle" | "dropdown" | "options";
+// suggestions. options: the reorderable option list. outputs: the fields of a
+// structured model reply. model: the configured models.
+export type FieldKind = "text" | "line" | "block" | "file" | "folder" | "toggle" | "dropdown" | "options" | "outputs" | "model";
 
 export const TEMPLATED_KINDS = new Set<FieldKind>(["line", "block", "file", "folder"]);
+
+// How a templated field's values are finished. A path is cleaned for file names and normalized,
+// a note escapes its frontmatter values, and plain takes values as they are.
+export type ResolveMode = "plain" | "path" | "note";
 
 export interface FieldDef {
   key: string;
@@ -19,6 +24,7 @@ export interface FieldDef {
   desc?: string;
   placeholder?: string;
   mono?: boolean;
+  resolve?: ResolveMode; // plain when omitted
   options?: { value: string; label: string }[];
   showIf?: (step: Step) => boolean;
 }
@@ -32,6 +38,10 @@ export interface StepDef {
   output: OutputType | null;
   defaultOutput: string;
   outputHint: string;
+  cleanInPath: boolean; // its output is typed or generated text, which a path cleans
+  fromUri: boolean; // a URI value for its output replaces asking
+  activity?: string; // what the progress notice says while it runs on its own
+  preview?: { verb: string; key: string }; // what a test run says it would do, and to which field
   fields: FieldDef[];
   make: () => Step;
 }
@@ -46,11 +56,14 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     output: "text",
     defaultOutput: "input",
     outputHint: "what you typed",
+    cleanInPath: true,
+    fromUri: true,
     fields: [
       { key: "label", label: "Question", kind: "text", desc: "Shown above the input box.", placeholder: "What's on your mind?" },
-      { key: "multiline", label: "Multi-line", kind: "toggle", desc: "A larger box. Enter adds a line, Cmd-Enter submits." },
+      { key: "default", label: "Default", kind: "line", desc: "Already in the box when it opens. {{selection}} starts from the text you selected.", placeholder: "{{selection}}" },
+      { key: "multiline", label: "Multi-line", kind: "toggle", desc: "A larger box where Enter adds a line." },
     ],
-    make: () => ({ type: "prompt", variable: "input", label: "", multiline: false }),
+    make: () => ({ type: "prompt", variable: "input", label: "", multiline: false, default: "" }),
   },
   choice: {
     type: "choice",
@@ -61,6 +74,8 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     output: "text",
     defaultOutput: "choice",
     outputHint: "the option you picked",
+    cleanInPath: false,
+    fromUri: true,
     fields: [
       { key: "label", label: "Question", kind: "text", desc: "Shown above the list.", placeholder: "Which one?" },
       { key: "options", label: "Options", kind: "options" },
@@ -76,10 +91,13 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     output: "file",
     defaultOutput: "file",
     outputHint: "the file you pick",
+    cleanInPath: false,
+    fromUri: true,
     fields: [
+      { key: "label", label: "Question", kind: "text", desc: "Shown in the search box.", placeholder: "Which log?" },
       { key: "folder", label: "Folder", kind: "folder", desc: "Only files in this folder are offered. Empty means the whole vault.", placeholder: "Notes/" },
     ],
-    make: () => ({ type: "file_picker", variable: "file", folder: "" }),
+    make: () => ({ type: "file_picker", variable: "file", label: "", folder: "" }),
   },
   quick_task: {
     type: "quick_task",
@@ -90,12 +108,14 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     output: "file",
     defaultOutput: "task",
     outputHint: "the task note",
+    cleanInPath: false,
+    fromUri: false,
     fields: [
       {
         key: "project",
         label: "Project",
         kind: "file",
-        desc: "Linked from the task as its project. A note from an earlier step, or a path. Leave empty for none.",
+        desc: "The note Quick Tasks embeds the task in. A note from an earlier step, or a path. Leave empty for none.",
         placeholder: "{{file}}",
       },
       { key: "prefill", label: "Prefill", kind: "line", desc: "Typed into the box before you start, so a tag or a date is already there.", placeholder: "#work" },
@@ -111,12 +131,41 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     output: "text",
     defaultOutput: "reply",
     outputHint: "the reply",
+    cleanInPath: true,
+    fromUri: false,
     fields: [
-      { key: "model", label: "Model", kind: "dropdown" },
+      { key: "model", label: "Model", kind: "model" },
       { key: "system_prompt", label: "System prompt", kind: "block", placeholder: "How the model should behave." },
       { key: "user_prompt", label: "User prompt", kind: "block", placeholder: "What to send. Type {{ to insert a value." },
+      { key: "outputs", label: "Reply", kind: "outputs" },
     ],
-    make: () => ({ type: "llm", variable: "reply", system_prompt: "", user_prompt: "", model: "" }),
+    make: () => ({ type: "llm", variable: "reply", system_prompt: "", user_prompt: "", model: "", outputs: [] }),
+  },
+  fetch_page: {
+    type: "fetch_page",
+    verb: "Fetch page",
+    icon: "globe",
+    group: "generate",
+    description: "Download a web page as Markdown",
+    output: "text",
+    defaultOutput: "page",
+    outputHint: "the page as Markdown, and its title",
+    cleanInPath: true,
+    fromUri: false,
+    activity: "Fetching the page",
+    fields: [
+      { key: "url", label: "URL", kind: "line", desc: "A URL, or a value with one in it. The first URL is used.", placeholder: "{{source}}" },
+      {
+        key: "noUrl",
+        label: "If there is no URL",
+        kind: "dropdown",
+        options: [
+          { value: "text", label: "Use the text as the page" },
+          { value: "fail", label: "Stop the action" },
+        ],
+      },
+    ],
+    make: () => ({ type: "fetch_page", variable: "page", titleVariable: "page_title", url: "", noUrl: "text" }),
   },
   create_file: {
     type: "create_file",
@@ -127,9 +176,20 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     output: "file",
     defaultOutput: "note",
     outputHint: "the file this step creates",
+    cleanInPath: false,
+    fromUri: false,
+    activity: "Creating the note",
+    preview: { verb: "Would create", key: "path" },
     fields: [
-      { key: "path", label: "Path", kind: "line", desc: ".md is added if missing.", placeholder: "Inbox/{{timestamp}}" },
-      { key: "content", label: "Content", kind: "block", mono: true, placeholder: "The note body. Type {{ to insert a value." },
+      {
+        key: "path",
+        label: "Path",
+        kind: "line",
+        resolve: "path",
+        desc: ".md is added if missing. Missing folders are created. Typed and generated values are made safe for a file name.",
+        placeholder: "Inbox/{{timestamp}}",
+      },
+      { key: "content", label: "Content", kind: "block", mono: true, resolve: "note", placeholder: "The note body. Type {{ to insert a value." },
     ],
     make: () => ({ type: "create_file", variable: "note", path: "", content: "" }),
   },
@@ -142,8 +202,12 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     output: null,
     defaultOutput: "",
     outputHint: "nothing · this step writes to the file",
+    cleanInPath: false,
+    fromUri: false,
+    activity: "Adding the text",
+    preview: { verb: "Would insert into", key: "target" },
     fields: [
-      { key: "target", label: "File", kind: "file", desc: "A file from an earlier step, or a path.", placeholder: "Logs/Work" },
+      { key: "target", label: "File", kind: "file", resolve: "path", desc: "A file from an earlier step, or a path.", placeholder: "Logs/Work" },
       { key: "section", label: "Section", kind: "line", desc: "The heading line, including the # marks.", placeholder: "# Log" },
       {
         key: "position",
@@ -160,6 +224,7 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
         key: "templatePath",
         label: "Template",
         kind: "file",
+        resolve: "path",
         desc: "Copied into the new file before inserting.",
         placeholder: "Templates/log",
         showIf: (s) => s.type === "insert_in_section" && s.createIfMissing,
@@ -176,17 +241,31 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     output: null,
     defaultOutput: "",
     outputHint: "nothing · this step only opens the file",
+    cleanInPath: false,
+    fromUri: false,
+    activity: "Opening the note",
+    preview: { verb: "Would open", key: "target" },
     fields: [
-      { key: "target", label: "File", kind: "file", desc: "A file from an earlier step, or a path.", placeholder: "{{note}}" },
-      { key: "section", label: "Scroll to", kind: "line", desc: "A heading in the file. Leave empty for the top.", placeholder: "## Notes" },
+      { key: "target", label: "File", kind: "file", resolve: "path", desc: "A file from an earlier step, or a path.", placeholder: "{{note}}" },
+      { key: "section", label: "Scroll to", kind: "line", desc: "A heading in the file. The cursor goes on the line under it.", placeholder: "## Notes" },
+      {
+        key: "openIn",
+        label: "Open in",
+        kind: "dropdown",
+        options: [
+          { value: "current", label: "Current tab" },
+          { value: "tab", label: "New tab" },
+          { value: "split", label: "Split to the right" },
+        ],
+      },
     ],
-    make: () => ({ type: "open_file", target: "", section: "" }),
+    make: () => ({ type: "open_file", target: "", section: "", openIn: "current" }),
   },
 };
 
 export const STEP_GROUPS: { id: StepGroup; label: string; types: StepType[] }[] = [
   { id: "ask", label: "Ask", types: ["prompt", "choice", "file_picker", "quick_task"] },
-  { id: "generate", label: "Generate", types: ["llm"] },
+  { id: "generate", label: "Fetch and generate", types: ["fetch_page", "llm"] },
   { id: "do", label: "Do", types: ["create_file", "insert_in_section", "open_file"] },
 ];
 
@@ -196,45 +275,96 @@ export function makeStep(type: StepType): Step {
   return STEP_DEFS[type].make();
 }
 
-export function outputOf(step: Step): { name: string; type: OutputType } | null {
-  const def = STEP_DEFS[step.type];
-  if (def.output === null || !("variable" in step)) return null;
-  return { name: step.variable, type: def.output };
+// A step of `type` with every default, and `values` on top. For steps written in code.
+export function stepWith<T extends StepType>(type: T, values: Partial<Extract<Step, { type: T }>> = {}): Step {
+  return { ...makeStep(type), ...values } as Step;
 }
 
-// The fields whose values may contain {{variables}}.
-export function templatedFields(step: Step): { key: string; value: string }[] {
+export interface StepOutput {
+  name: string;
+  type: OutputType;
+}
+
+// What a step hands down, in order. A structured model step hands down one value per field.
+export function outputsOf(step: Step): StepOutput[] {
+  if (step.type === "llm" && step.outputs.length > 0) return step.outputs.map((o) => ({ name: o.name, type: "text" }));
+  if (step.type === "fetch_page") return [{ name: step.variable, type: "text" }, { name: step.titleVariable, type: "text" }];
+  const def = STEP_DEFS[step.type];
+  if (def.output === null || !("variable" in step)) return [];
+  return [{ name: step.variable, type: def.output }];
+}
+
+// Renames one of a step's outputs in place, without touching its consumers.
+export function setOutputName(step: Step, from: string, to: string): void {
+  if (step.type === "llm" && step.outputs.length > 0) {
+    for (const o of step.outputs) if (o.name === from) o.name = to;
+    return;
+  }
+  if (step.type === "fetch_page" && step.titleVariable === from) {
+    step.titleVariable = to;
+    return;
+  }
+  if ("variable" in step && step.variable === from) step.variable = to;
+}
+
+// Renames the step's outputs in place so none collides with `taken` or with another of its own.
+export function freshOutputs(step: Step, taken: Iterable<string>): Step {
+  const used = new Set(taken);
+  for (const out of outputsOf(step)) {
+    const name = uniqueName(out.name, used);
+    used.add(name);
+    if (name !== out.name) setOutputName(step, out.name, name);
+  }
+  return step;
+}
+
+// The fields whose values may contain {{variables}}, each with how its values are finished.
+export function templatedFields(step: Step): { key: string; value: string; mode: ResolveMode }[] {
   const record = step as unknown as Record<string, unknown>;
-  const result: { key: string; value: string }[] = [];
+  const result: { key: string; value: string; mode: ResolveMode }[] = [];
   for (const f of STEP_DEFS[step.type].fields) {
     if (!TEMPLATED_KINDS.has(f.kind)) continue;
     const v = record[f.key];
-    if (typeof v === "string") result.push({ key: f.key, value: v });
+    if (typeof v === "string") result.push({ key: f.key, value: v, mode: f.resolve ?? "plain" });
   }
   return result;
 }
 
-// Changes a step's type, keeping every same-named field of the same primitive
-// type. A colliding output name is uniquified against `taken`.
+// Changes a step's type, keeping its name and every same-named field of the same
+// primitive type. Colliding output names are uniquified against `taken`.
 export function convertStep(step: Step, type: StepType, taken: Iterable<string>): Step {
   const next = makeStep(type) as unknown as Record<string, unknown>;
   const prev = step as unknown as Record<string, unknown>;
   for (const key of Object.keys(next)) {
-    if (key === "type" || key === "variable" || !(key in prev)) continue;
+    if (key === "type" || key === "titleVariable" || key === "outputs" || !(key in prev)) continue;
     if (typeof prev[key] === typeof next[key] && Array.isArray(prev[key]) === Array.isArray(next[key])) next[key] = prev[key];
   }
-  if ("variable" in next) {
-    const wanted = typeof prev.variable === "string" ? prev.variable : STEP_DEFS[type].defaultOutput;
-    next.variable = uniqueName(wanted, taken);
-  }
-  return next as unknown as Step;
+  if (typeof prev.name === "string" && prev.name) next.name = prev.name;
+  return freshOutputs(next as unknown as Step, taken);
 }
 
+// The model a step will run on: the named one, or the first when it names none. Null when the
+// named model is not configured (renamed or deleted), so the step fails instead of switching.
+export function modelOf(step: Step, models: ModelConfig[]): ModelConfig | null {
+  if (step.type !== "llm") return null;
+  if (!step.model) return models[0] ?? null;
+  return models.find((m) => m.name === step.model) ?? null;
+}
+
+export function isModelMissing(step: Step, models: ModelConfig[]): step is LLMStep {
+  return step.type === "llm" && modelOf(step, models) === null;
+}
+
+// A step's title in the rail and the settings chain: its name, else its model or verb.
 export function stepTitle(step: Step, models: ModelConfig[]): string {
-  if (step.type === "llm") {
-    const model = step.model ? models.find((m) => m.name === step.model) : models[0];
-    if (model) return model.name;
-  }
+  if (step.name?.trim()) return step.name.trim();
+  if (step.type === "llm") return modelOf(step, models)?.name ?? (step.model || "Ask a model");
   return STEP_DEFS[step.type].verb;
 }
 
+// A step in running text ("used by Classify, Opus → body"). An unnamed model step names its model
+// and what it produces, since several model steps would otherwise read alike.
+export function stepLabel(step: Step, models: ModelConfig[]): string {
+  if (step.name?.trim() || step.type !== "llm") return stepTitle(step, models);
+  return `${stepTitle(step, models)} → ${outputsOf(step).map((o) => o.name).join(", ")}`;
+}

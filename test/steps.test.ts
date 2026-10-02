@@ -1,12 +1,27 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Step } from "../src/types";
-import { STEP_DEFS, STEP_TYPES_IN_ORDER, convertStep, makeStep, outputOf, stepTitle, templatedFields } from "../src/steps";
+import { ModelConfig, Step } from "../src/types";
+import {
+  STEP_DEFS,
+  STEP_TYPES_IN_ORDER,
+  convertStep,
+  freshOutputs,
+  isModelMissing,
+  makeStep,
+  outputsOf,
+  setOutputName,
+  stepLabel,
+  stepTitle,
+  stepWith,
+  templatedFields,
+} from "../src/steps";
 import { consumersOf, renameOutput } from "../src/variables";
+
+const models: ModelConfig[] = [{ name: "Opus", provider: "anthropic", model: "m", secret_id: "" }];
 
 test("quick_task is a file-producing step with two templated fields", () => {
   assert.deepEqual(templatedFields(makeStep("quick_task")).map((f) => f.key), ["project", "prefill"]);
-  const picked: Step = { type: "file_picker", variable: "file", folder: "Project Notes/" };
+  const picked: Step = { type: "file_picker", variable: "file", label: "", folder: "Project Notes/" };
   assert.deepEqual(convertStep(picked, "quick_task", []), { type: "quick_task", variable: "file", project: "", prefill: "" });
 
   const steps: Step[] = [
@@ -16,7 +31,7 @@ test("quick_task is a file-producing step with two templated fields", () => {
   ];
   assert.deepEqual(consumersOf(steps, 0), [1, 2]);
   assert.deepEqual(consumersOf(steps, 1), [2]);
-  assert.equal(renameOutput(steps, 1, "todo"), true);
+  assert.equal(renameOutput(steps, 1, "task", "todo"), true);
   assert.equal((steps[2] as { format: string }).format, "![[{{todo}}]]");
 });
 
@@ -26,33 +41,89 @@ test("every step type has a definition whose factory matches its output", () => 
     const step = makeStep(type);
     assert.equal(step.type, type);
     assert.equal("variable" in step, def.output !== null, type);
-    if (def.output !== null) assert.equal(outputOf(step)?.name, def.defaultOutput);
+    if (def.output !== null) assert.equal(outputsOf(step)[0]?.name, def.defaultOutput);
     for (const f of def.fields) assert.ok(f.key in step, `${type}.${f.key}`);
   }
 });
 
-test("convertStep keeps same-named fields and uniquifies the output", () => {
-  const open: Step = { type: "open_file", target: "{{note}}", section: "## Ref" };
+test("outputsOf: a fetch hands down the page and its title, a structured model one value per field", () => {
+  assert.deepEqual(outputsOf(makeStep("fetch_page")), [
+    { name: "page", type: "text" },
+    { name: "page_title", type: "text" },
+  ]);
+  const llm: Step = {
+    type: "llm",
+    variable: "reply",
+    model: "",
+    system_prompt: "",
+    user_prompt: "",
+    outputs: [
+      { name: "category", desc: "", choices: ["Article", "Paper"] },
+      { name: "title", desc: "", choices: [] },
+    ],
+  };
+  assert.deepEqual(outputsOf(llm).map((o) => o.name), ["category", "title"]);
+  setOutputName(llm, "title", "heading");
+  assert.deepEqual(outputsOf(llm).map((o) => o.name), ["category", "heading"]);
+  assert.deepEqual(outputsOf({ ...llm, outputs: [] }).map((o) => o.name), ["reply"]);
+  assert.deepEqual(outputsOf(makeStep("open_file")), []);
+});
+
+test("convertStep keeps same-named fields and the name, and uniquifies every output", () => {
+  const open: Step = { type: "open_file", target: "{{note}}", section: "## Ref", openIn: "tab", name: "Show it" };
   const insert = convertStep(open, "insert_in_section", []);
   assert.equal(insert.type, "insert_in_section");
   assert.equal((insert as { target: string }).target, "{{note}}");
   assert.equal((insert as { section: string }).section, "## Ref");
+  assert.equal(insert.name, "Show it");
 
-  const prompt: Step = { type: "prompt", variable: "thought", label: "Q", multiline: true };
+  const prompt: Step = { type: "prompt", variable: "thought", label: "Q", multiline: true, default: "" };
   const llm = convertStep(prompt, "llm", ["thought", "reply"]);
   assert.equal((llm as { variable: string }).variable, "thought2");
   const choice = convertStep(prompt, "choice", ["reply"]);
   assert.equal((choice as { variable: string }).variable, "thought");
   assert.equal((choice as { label: string }).label, "Q");
   assert.equal("variable" in convertStep(prompt, "open_file", []), false);
+  const fetch = convertStep(prompt, "fetch_page", ["page_title"]);
+  assert.deepEqual(outputsOf(fetch).map((o) => o.name), ["thought", "page_title2"]);
 });
 
-test("templatedFields and stepTitle", () => {
-  const llm: Step = { type: "llm", variable: "r", model: "Opus", system_prompt: "s", user_prompt: "u" };
+test("templatedFields, stepTitle and stepLabel", () => {
+  const llm: Step = { type: "llm", variable: "r", model: "Opus", system_prompt: "s", user_prompt: "u", outputs: [] };
   assert.deepEqual(templatedFields(llm).map((f) => f.key), ["system_prompt", "user_prompt"]);
-  const models = [{ name: "Opus", provider: "anthropic" as const, model: "m", secret_id: "" }];
   assert.equal(stepTitle(llm, models), "Opus");
   assert.equal(stepTitle({ ...llm, model: "" }, models), "Opus");
   assert.equal(stepTitle({ ...llm, model: "" }, []), "Ask a model");
   assert.equal(stepTitle(makeStep("create_file"), []), "Create file");
+  assert.equal(stepLabel(llm, models), "Opus → r");
+  assert.equal(stepTitle({ ...llm, name: "Write body" }, models), "Write body");
+  assert.equal(stepLabel({ ...llm, name: "Write body" }, models), "Write body");
+  assert.equal(stepLabel(makeStep("create_file"), models), "Create file");
+});
+
+test("a step naming a model that is gone is marked, never swapped for the first one", () => {
+  const llm: Step = { type: "llm", variable: "r", model: "Opus 4.6", system_prompt: "", user_prompt: "", outputs: [] };
+  assert.equal(isModelMissing(llm, models), true);
+  assert.equal(isModelMissing({ ...llm, model: "Opus" }, models), false);
+  assert.equal(isModelMissing({ ...llm, model: "" }, models), false);
+  assert.equal(isModelMissing({ ...llm, model: "" }, []), true);
+  assert.equal(stepTitle(llm, models), "Opus 4.6");
+});
+
+test("freshOutputs makes every output name unique, against others and each other", () => {
+  const fetch = freshOutputs(makeStep("fetch_page"), ["page", "page_title", "page2"]);
+  assert.deepEqual(outputsOf(fetch).map((o) => o.name), ["page3", "page_title2"]);
+  const llm = freshOutputs(stepWith("llm", { outputs: [{ name: "title", desc: "", choices: [] }, { name: "body", desc: "", choices: [] }] }), ["title"]);
+  assert.deepEqual(outputsOf(llm).map((o) => o.name), ["title2", "body"]);
+});
+
+test("stepWith fills every default under the given values", () => {
+  assert.deepEqual(stepWith("open_file", { target: "{{note}}" }), { type: "open_file", target: "{{note}}", section: "", openIn: "current" });
+});
+
+test("templatedFields tells path and note fields from plain ones", () => {
+  const modes = (type: Parameters<typeof makeStep>[0]) => templatedFields(makeStep(type)).map((f) => `${f.key}:${f.mode}`);
+  assert.deepEqual(modes("create_file"), ["path:path", "content:note"]);
+  assert.deepEqual(modes("insert_in_section"), ["target:path", "section:plain", "format:plain", "templatePath:path"]);
+  assert.deepEqual(modes("open_file"), ["target:path", "section:plain"]);
 });
