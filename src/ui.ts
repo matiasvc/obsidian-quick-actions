@@ -1,7 +1,7 @@
 import { App, Notice, setIcon } from "obsidian";
-import { Action, ModelConfig, OutputType, Step, toSlug } from "./types";
-import { STEP_DEFS, stepTitle } from "./steps";
-import { InputInfo } from "./variables";
+import { Action, ModelConfig, OutputType, Step } from "./types";
+import { STEP_DEFS, isModelMissing, stepTitle } from "./steps";
+import { BUILTINS, InputInfo } from "./variables";
 import type { PillField } from "./pillfield";
 
 // Small DOM helpers shared by the settings tab and the editors.
@@ -58,7 +58,7 @@ export function renderPill(parent: HTMLElement, name: string, type: OutputType |
 }
 
 export function describeInput(input: InputInfo, steps: Step[], models: ModelConfig[]): string {
-  if (input.from < 0) return "Always available";
+  if (input.from < 0) return BUILTINS.find((b) => b.name === input.name)?.source ?? "Always available";
   return `Step ${input.from + 1} · ${stepTitle(steps[input.from], models)} · ${input.type}`;
 }
 
@@ -114,9 +114,49 @@ export function chainEl(parent: HTMLElement, steps: Step[], models: ModelConfig[
     if (i > 0) iconEl(chain, "chevron-right", "quick-actions-arrow");
     const chip = labelEl(chain, "quick-actions-chip", STEP_DEFS[step.type].icon, stepTitle(step, models));
     if (step.type === "llm") chip.addClass("is-llm");
+    if (isModelMissing(step, models)) {
+      chip.addClass("is-error");
+      chip.setAttr("aria-label", `Model "${step.model}" is not configured`);
+    }
   });
   if (steps.length === 0) chain.createSpan({ cls: "quick-actions-chip is-add", text: "No steps" });
   return chain;
+}
+
+export const UNDO_NOTICE_MS = 10000;
+
+export interface NoticeLink {
+  text: string;
+  click: () => void;
+  keep?: boolean; // leave the notice up after the click
+}
+
+// A link in a notice. Its click never reaches the notice, which hides on any click, so the link
+// decides with `keep` whether the notice stays.
+export function noticeLink(notice: Notice, parent: HTMLElement, link: NoticeLink): HTMLElement {
+  const el = parent.createEl("a", { text: link.text });
+  el.addEventListener("click", (evt) => {
+    evt.preventDefault();
+    evt.stopPropagation();
+    if (!link.keep) notice.hide();
+    link.click();
+  });
+  return el;
+}
+
+// A notice with an optional bold title, lines of text and a row of links. A duration of 0 keeps it
+// up until it is clicked.
+export function linkNotice(lines: string[], links: NoticeLink[], duration?: number, title?: string): Notice {
+  const notice = new Notice("", duration);
+  const el = notice.messageEl;
+  el.addClass("quick-actions-notice");
+  if (title) el.createEl("b", { text: title });
+  for (const line of lines) el.createDiv({ text: line });
+  if (links.length > 0) {
+    const row = el.createDiv("quick-actions-notice-acts");
+    for (const link of links) noticeLink(notice, row, link);
+  }
+  return notice;
 }
 
 export function emptyEl(parent: HTMLElement, title: string | null, text: string): { el: HTMLElement; row: HTMLElement } {
@@ -127,8 +167,9 @@ export function emptyEl(parent: HTMLElement, title: string | null, text: string)
   return { el, row };
 }
 
+// By id, which survives a rename. The handler still accepts the name's slug for older links.
 export function actionUri(app: App, action: Action): string {
-  return `obsidian://quick-actions?vault=${encodeURIComponent(app.vault.getName())}&run=${encodeURIComponent(toSlug(action.name))}`;
+  return `obsidian://quick-actions?vault=${encodeURIComponent(app.vault.getName())}&run=${encodeURIComponent(action.id)}`;
 }
 
 export function copyUri(app: App, action: Action): void {

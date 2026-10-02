@@ -1,6 +1,7 @@
 import { Menu } from "obsidian";
 import { StepType } from "./types";
 import { STEP_DEFS, STEP_GROUPS } from "./steps";
+import { FILTERS } from "./text";
 
 export interface MenuEntry {
   title: string;
@@ -11,6 +12,7 @@ export interface MenuEntry {
   label?: boolean;
   warning?: boolean;
   disabled?: boolean;
+  checked?: boolean;
   click?: () => void;
 }
 
@@ -33,6 +35,7 @@ export function addEntries(menu: Menu, entries: MenuEntry[]): Menu {
       if (e.label) item.setIsLabel(true);
       if (e.warning) item.setWarning(true);
       if (e.disabled) item.setDisabled(true);
+      if (e.checked !== undefined) item.setChecked(e.checked);
       if (e.click) item.onClick(e.click);
     });
   }
@@ -49,6 +52,17 @@ export function showMenu(entries: MenuEntry[], at: MouseEvent | HTMLElement): Me
     menu.showAtPosition({ x: rect.left, y: rect.bottom + 4 });
   }
   return menu;
+}
+
+// One entry per filter with its example. `current` ticks the filters a reference already has.
+export function filterEntries(onPick: (id: string) => void, current?: string[]): MenuEntry[] {
+  return FILTERS.map((f) => ({
+    title: f.id,
+    desc: `${f.example[0]} → ${f.example[1]}`,
+    section: "filters",
+    checked: current ? current.includes(f.id) : undefined,
+    click: () => onPick(f.id),
+  }));
 }
 
 // The list-row menu shared by actions, models and steps: custom entries, then move, then delete.

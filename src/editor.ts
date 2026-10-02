@@ -1,83 +1,78 @@
 import { App, Modal, Notice, Platform, Setting, setIcon } from "obsidian";
-import { Action, Step, StepType } from "./types";
+import { Action, LLMOutput, Step, StepType } from "./types";
 import QuickActionsPlugin from "./main";
-import { FieldDef, STEP_DEFS, STEP_TYPES_IN_ORDER, convertStep, makeStep, outputOf, stepTitle } from "./steps";
 import {
-  BUILTINS,
-  availableInputs,
-  consumersOf,
-  producedNames,
-  renameOutput,
-  resolveSegments,
-  resolveStep,
-  uniqueName,
-  usedInputs,
-} from "./variables";
-import { RunResult, StepResult, runAction } from "./executor";
+  FieldDef,
+  ResolveMode,
+  STEP_DEFS,
+  STEP_TYPES_IN_ORDER,
+  StepOutput,
+  convertStep,
+  freshOutputs,
+  isModelMissing,
+  makeStep,
+  modelOf,
+  outputsOf,
+  stepLabel,
+  stepTitle,
+} from "./steps";
+import { BUILTINS, availableInputs, consumersOf, producedNames, renameOutput, resolveSegments, resolveStep, uniqueName, usedInputs } from "./variables";
+import { InsertPreview } from "./insert";
+import { RunResult, StepResult, resolveOptions, runAction } from "./executor";
+import { RunProgress } from "./progress";
 import { FolderSuggest } from "./suggest";
-import { PillField, createPillField } from "./pillfield";
+import { createPillField } from "./pillfield";
 import { VarItem, attachVarPicker } from "./varpicker";
 import { FieldFocusTracker, copyUri, describeInput, formatSeconds, iconButton, iconEl, renderInBand, renderPill, textButton, truncate } from "./ui";
-import { showAddStepMenu, showRowMenu } from "./menus";
+import { showAddStepMenu, showMenu, showRowMenu } from "./menus";
 import { findQuickTasks } from "./quicktasks";
 import { enableDragReorder, moveItem } from "./dragreorder";
+import { IconPickerModal } from "./modals";
 
-// What a "Do" step would do, phrased for a step that has not run yet.
-function previewOf(step: Step): { verb: string; key: string } | null {
-  switch (step.type) {
-    case "create_file":
-      return { verb: "Would create", key: "path" };
-    case "insert_in_section":
-      return { verb: "Would insert into", key: "target" };
-    case "open_file":
-      return { verb: "Would open", key: "target" };
-    default:
-      return null;
-  }
+// A notice for values that later steps read and no step produces any more.
+function lostSource(names: string[]): string {
+  return `Later steps still use ${names.map((n) => `{{${n}}}`).join(", ")} and now need a new source.`;
 }
-
-const BUILTIN_SAMPLES: Record<string, { source: string; sample: string }> = {
-  date: { source: "Today", sample: "2026-09-04" },
-  time: { source: "Now", sample: "13:52" },
-  timestamp: { source: "Now, for filenames", sample: "20260904135200" },
-};
 
 export class ActionEditModal extends Modal {
   private plugin: QuickActionsPlugin;
   private draft: Action;
+  private initialJson: string;
   private onSave: (action: Action) => void;
   private selected = 0;
   // Phones show one column: the step list, or the selected step with a back button.
   private paneOpen = false;
   private run: RunResult | null = null;
+  // Bumped whenever the steps change, so a test run still going knows its results are stale.
+  private runGen = 0;
   private view: "edit" | "run" = "edit";
   private running = false;
   private closed = false;
+  private confirming = false; // the footer asks whether to discard changes
   private tracker = new FieldFocusTracker();
-  private fields: PillField[] = [];
   private headEl: HTMLElement;
   private railEl: HTMLElement;
   private paneEl: HTMLElement;
+  private footerEl: HTMLElement;
   private disposeDrag: (() => void) | null = null;
 
   constructor(app: App, plugin: QuickActionsPlugin, source: Action, onSave: (action: Action) => void) {
     super(app);
     this.plugin = plugin;
-    this.draft = JSON.parse(JSON.stringify(source));
+    this.initialJson = JSON.stringify(source);
+    this.draft = JSON.parse(this.initialJson);
     this.onSave = onSave;
   }
 
   onOpen(): void {
     const { contentEl } = this;
-    // mod-lg is Obsidian's full-sheet modal on phones; it has no desktop rules.
+    // mod-lg is Obsidian's full-sheet modal on phones and has no desktop rules.
     this.modalEl.addClass("quick-actions-editor", "mod-lg");
     this.headEl = contentEl.createDiv("quick-actions-editor-head");
     const split = contentEl.createDiv("quick-actions-split");
     this.railEl = split.createDiv("quick-actions-rail");
     this.paneEl = split.createDiv("quick-actions-pane");
-    const footer = contentEl.createDiv("quick-actions-footer");
-    footer.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
-    footer.createEl("button", { text: "Save", cls: "mod-cta" }).addEventListener("click", () => this.save());
+    this.footerEl = contentEl.createDiv("quick-actions-footer");
     this.scope.register(["Mod"], "Enter", () => {
       this.save();
       return false;
@@ -85,6 +80,26 @@ export class ActionEditModal extends Modal {
     this.renderHead();
     this.renderRail();
     this.renderPane();
+    this.renderFooter();
+  }
+
+  // Esc, the close button and Cancel call close(). A swipe down on a phone and a click outside ask
+  // canDismiss() first. With unsaved changes either one puts the discard question in the footer
+  // instead, and the next one closes.
+  close(): void {
+    if (!this.askToDiscard()) super.close();
+  }
+
+  canDismiss(): boolean {
+    return !this.askToDiscard();
+  }
+
+  // True when it has just asked, so the caller must not close.
+  private askToDiscard(): boolean {
+    if (this.confirming || JSON.stringify(this.draft) === this.initialJson) return false;
+    this.confirming = true;
+    this.renderFooter();
+    return true;
   }
 
   onClose(): void {
@@ -95,7 +110,26 @@ export class ActionEditModal extends Modal {
 
   private save(): void {
     this.onSave(this.draft);
-    this.close();
+    super.close();
+  }
+
+  private renderFooter(): void {
+    const footer = this.footerEl;
+    footer.empty();
+    footer.toggleClass("is-confirming", this.confirming);
+    if (this.confirming) {
+      footer.createSpan({ cls: "quick-actions-footer-text", text: `Discard changes to ${this.draft.name || "this action"}?` });
+      footer.createEl("button", { text: "Keep editing" }).addEventListener("click", () => {
+        this.confirming = false;
+        this.renderFooter();
+      });
+      const discard = footer.createEl("button", { text: "Discard", cls: "mod-warning" });
+      discard.addEventListener("click", () => super.close());
+      discard.focus();
+      return;
+    }
+    footer.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    footer.createEl("button", { text: "Save", cls: "mod-cta" }).addEventListener("click", () => this.save());
   }
 
   private get steps(): Step[] {
@@ -119,6 +153,31 @@ export class ActionEditModal extends Modal {
   private renderHead(): void {
     const head = this.headEl;
     head.empty();
+    const iconBtn = head.createDiv({ cls: "clickable-icon quick-actions-action-icon", attr: { "aria-label": "Icon and ribbon button" } });
+    setIcon(iconBtn, this.draft.icon);
+    iconBtn.addEventListener("click", (evt) =>
+      showMenu(
+        [
+          {
+            title: "Change icon…",
+            icon: "shapes",
+            click: () =>
+              new IconPickerModal(this.app, (icon) => {
+                this.draft.icon = icon;
+                this.renderHead();
+              }).open(),
+          },
+          {
+            title: "Show in the ribbon",
+            desc: "A button in the left sidebar that runs this action",
+            icon: "panel-left",
+            checked: !!this.draft.ribbon,
+            click: () => (this.draft.ribbon = !this.draft.ribbon),
+          },
+        ],
+        evt,
+      ),
+    );
     const name = head.createEl("input", { type: "text", cls: "quick-actions-name", placeholder: "Action name" });
     name.value = this.draft.name;
     name.addEventListener("input", () => (this.draft.name = name.value));
@@ -143,7 +202,7 @@ export class ActionEditModal extends Modal {
     if (this.steps.length > 0) {
       const btn = textButton(head, "play", this.run ? "Run to here" : "Test run", () => void this.runTo(this.selected + 1));
       if (this.running) btn.disabled = true;
-      btn.setAttr("aria-label", "Runs the steps up to the selected one. Prompts and models are real, nothing is written.");
+      btn.setAttr("aria-label", "Runs the steps up to the selected one. Prompts, page fetches and models are real, and nothing is written.");
     }
     iconButton(head, "link", "Copy URI", () => copyUri(this.app, this.draft));
   }
@@ -178,20 +237,28 @@ export class ActionEditModal extends Modal {
     });
   }
 
-  // The second line of a rail row: the output name, or what the last run captured.
+  // The second line of a rail row: what the step produces, or what the last run captured.
   private railSub(parent: HTMLElement, step: Step, i: number, row: HTMLElement): void {
-    const out = outputOf(step);
+    const outs = outputsOf(step);
     const result = this.resultFor(i);
     if (!this.run) {
-      if (out) parent.createDiv({ cls: "quick-actions-rail-sub", text: `→ ${out.name}` });
+      if (isModelMissing(step, this.models)) {
+        row.addClass("is-error");
+        parent.createDiv({ cls: "quick-actions-rail-sub", text: step.model ? `Model "${step.model}" is not configured` : "No models are configured" });
+        return;
+      }
+      const model = modelOf(step, this.models);
+      const lead = step.name?.trim() && model ? `${model.name} ` : "";
+      if (outs.length) parent.createDiv({ cls: "quick-actions-rail-sub", text: `${lead}→ ${outs.map((o) => o.name).join(", ")}` });
       return;
     }
     const sub = parent.createDiv("quick-actions-rail-sub is-value");
     if (result) {
-      if (result.status === "ok" && result.output) {
+      if (result.status === "ok" && result.outputs.length) {
         iconEl(sub, "check");
-        const value = sub.createSpan({ cls: "quick-actions-rail-value", text: `“${truncate(result.output.value, 40)}”` });
-        if (step.type === "llm") value.appendText(` · ${formatSeconds(result.ms)}`);
+        const text = result.outputs.length === 1 ? `“${truncate(result.outputs[0].value, 40)}”` : `${result.outputs.length} values`;
+        const value = sub.createSpan({ cls: "quick-actions-rail-value", text });
+        if (STEP_DEFS[step.type].group === "generate") value.appendText(` · ${formatSeconds(result.ms)}`);
       } else if (result.status === "ok") {
         iconEl(sub, "check");
         sub.createSpan({ cls: "quick-actions-rail-value", text: result.note ?? "Done" });
@@ -206,8 +273,9 @@ export class ActionEditModal extends Modal {
       return;
     }
     row.addClass("is-dim");
-    const preview = i === this.lastRunIndex() + 1 ? previewOf(step) : null;
-    sub.createSpan({ cls: "quick-actions-rail-value", text: preview ? `${preview.verb} ${resolveStep(step, this.run.vars)[preview.key]}` : "Not run" });
+    const preview = i === this.lastRunIndex() + 1 ? STEP_DEFS[step.type].preview : undefined;
+    const target = preview ? resolveStep(step, this.run.vars, resolveOptions(this.app, this.steps))[preview.key] : "";
+    sub.createSpan({ cls: "quick-actions-rail-value", text: preview ? `${preview.verb} ${target}` : "Not run" });
   }
 
   // ---- Pane ----
@@ -216,15 +284,12 @@ export class ActionEditModal extends Modal {
     this.selected = i;
     this.paneOpen = true;
     if (this.view === "run" && !this.resultFor(i)) this.view = "edit";
-    this.renderHead();
-    this.renderRail();
-    this.renderPane();
+    this.refreshAll();
   }
 
   private renderPane(): void {
     const pane = this.paneEl;
     pane.empty();
-    this.fields = [];
     this.tracker.reset();
     this.modalEl.toggleClass("is-pane-open", this.paneOpen);
     if (this.steps.length === 0) {
@@ -253,6 +318,18 @@ export class ActionEditModal extends Modal {
     for (const type of STEP_TYPES_IN_ORDER) select.createEl("option", { text: STEP_DEFS[type].verb, value: type });
     select.value = step.type;
     select.addEventListener("change", () => this.changeType(i, select.value as StepType));
+    const stepName = head.createEl("input", {
+      type: "text",
+      cls: "quick-actions-step-name",
+      placeholder: stepTitle({ ...step, name: "" }, this.models),
+      attr: { "aria-label": "Step name, shown in the list and wherever this step is mentioned" },
+    });
+    stepName.value = step.name ?? "";
+    stepName.addEventListener("input", () => {
+      if (stepName.value.trim()) step.name = stepName.value;
+      else delete step.name;
+      this.renderRail();
+    });
     const result = this.resultFor(i);
     if (result) {
       const seg = head.createSpan("quick-actions-seg");
@@ -296,51 +373,53 @@ export class ActionEditModal extends Modal {
       if (f.showIf && !f.showIf(step)) continue;
       this.renderField(body, step, f, i, inBand);
     }
-    const out = outputOf(step);
+    const outs = outputsOf(step);
     const band = card.createDiv("quick-actions-band is-out");
     band.createSpan({ cls: "quick-actions-band-lead", text: "Out" });
-    if (out) {
-      const pill = renderPill(band, out.name, out.type, { cls: "is-editable" });
-      pill.setAttr("contenteditable", "plaintext-only");
-      pill.setAttr("spellcheck", "false");
-      pill.setAttr("aria-label", "Click to rename. Every later use follows.");
-      pill.addEventListener("focus", () => pill.addClass("is-edit"));
-      pill.addEventListener("keydown", (evt) => {
-        if (evt.key === "Enter") {
-          evt.preventDefault();
-          pill.blur();
-        } else if (evt.key === "Escape") {
-          evt.preventDefault();
-          evt.stopPropagation();
-          pill.setText(out.name);
-          pill.blur();
-        }
-      });
-      pill.addEventListener("blur", () => {
-        pill.removeClass("is-edit");
-        const to = (pill.textContent ?? "").trim();
-        if (to === out.name) {
-          pill.setText(out.name);
-          return;
-        }
-        if (renameOutput(this.steps, i, to)) {
-          this.renderRail();
-          this.renderPane();
-        } else {
-          pill.setText(out.name);
-          new Notice(`Can't rename to "${to}": use letters, digits and underscores, and a name no other step produces.`);
-        }
-      });
-      band.createSpan({ cls: "quick-actions-hint", text: `${def.outputHint} · ${this.usedByText(i)}` });
-    } else {
-      band.createSpan({ cls: "quick-actions-hint", text: def.outputHint });
+    for (const out of outs) this.outPill(band, out, i);
+    const hint = step.type === "llm" && step.outputs.length ? "one value per field" : def.outputHint;
+    band.createSpan({ cls: "quick-actions-hint", text: outs.length ? `${hint} · ${this.usedByText(i)}` : hint });
+  }
+
+  // An output name in the Out band. Click to rename it, and every later use follows.
+  private outPill(band: HTMLElement, out: StepOutput, i: number): void {
+    const pill = renderPill(band, out.name, out.type, { cls: "is-editable" });
+    pill.setAttr("contenteditable", "plaintext-only");
+    pill.setAttr("spellcheck", "false");
+    pill.setAttr("aria-label", "Click to rename. Every later use follows.");
+    pill.addEventListener("focus", () => pill.addClass("is-edit"));
+    pill.addEventListener("keydown", (evt) => {
+      if (evt.key === "Enter") {
+        evt.preventDefault();
+        pill.blur();
+      } else if (evt.key === "Escape") {
+        evt.preventDefault();
+        evt.stopPropagation();
+        pill.setText(out.name);
+        pill.blur();
+      }
+    });
+    pill.addEventListener("blur", () => {
+      pill.removeClass("is-edit");
+      const to = (pill.textContent ?? "").trim();
+      if (to === out.name || !this.rename(i, out.name, to)) pill.setText(out.name);
+    });
+  }
+
+  private rename(i: number, from: string, to: string): boolean {
+    if (renameOutput(this.steps, i, from, to)) {
+      this.renderRail();
+      this.renderPane();
+      return true;
     }
+    new Notice(`Can't rename to "${to}". Use letters, digits and underscores, and a name nothing else produces.`);
+    return false;
   }
 
   private usedByText(i: number): string {
     const consumers = consumersOf(this.steps, i);
     if (consumers.length === 0) return "not used yet";
-    return "used by " + consumers.map((j) => stepTitle(this.steps[j], this.models)).join(", ");
+    return "used by " + consumers.map((j) => stepLabel(this.steps[j], this.models)).join(", ");
   }
 
   private renderInBand(container: HTMLElement, i: number): void {
@@ -361,10 +440,7 @@ export class ActionEditModal extends Modal {
     const record = step as unknown as Record<string, unknown>;
     const setting = new Setting(body).setName(f.label);
     if (f.desc) setting.setDesc(f.desc);
-    const edited = () => {
-      this.renderInBand(inBand, i);
-      for (const field of this.fields) field.refresh();
-    };
+    const edited = () => this.renderInBand(inBand, i);
     switch (f.kind) {
       case "text":
         setting.addText((t) =>
@@ -384,17 +460,12 @@ export class ActionEditModal extends Modal {
         return;
       case "dropdown":
         setting.addDropdown((d) => {
-          if (step.type === "llm" && f.key === "model") {
-            d.addOption("", this.models.length ? `(first model: ${this.models[0].name})` : "(no models configured)");
-            for (const m of this.models) d.addOption(m.name, m.name);
-          } else {
-            for (const o of f.options ?? []) d.addOption(o.value, o.label);
-          }
-          d.setValue(String(record[f.key] ?? "")).onChange((v) => {
-            record[f.key] = v;
-            if (step.type === "llm") this.renderRail();
-          });
+          for (const o of f.options ?? []) d.addOption(o.value, o.label);
+          d.setValue(String(record[f.key] ?? "")).onChange((v) => (record[f.key] = v));
         });
+        return;
+      case "model":
+        this.renderModel(setting, step);
         return;
       case "folder":
         setting.addText((t) => {
@@ -410,6 +481,9 @@ export class ActionEditModal extends Modal {
       case "options":
         this.renderOptions(setting, step);
         return;
+      case "outputs":
+        this.renderOutputs(setting, step, i);
+        return;
       case "line":
       case "file":
       case "block": {
@@ -421,6 +495,7 @@ export class ActionEditModal extends Modal {
           multiline,
           mono: f.mono,
           placeholder: f.placeholder,
+          toolsParent: setting.nameEl,
           resolve: (name) => {
             const input = availableInputs(this.steps, i).find((a) => a.name === name);
             return input ? { type: input.type } : null;
@@ -432,11 +507,29 @@ export class ActionEditModal extends Modal {
           onFocus: () => (this.tracker.current = field),
         });
         attachVarPicker(this.app, field, () => this.pickerItems(i, available()));
-        this.fields.push(field);
         this.tracker.register(field);
         return;
       }
     }
+  }
+
+  // The configured models, plus the one the step names when that one is gone.
+  private renderModel(setting: Setting, step: Step): void {
+    if (step.type !== "llm") return;
+    setting.addDropdown((d) => {
+      d.addOption("", this.models.length ? `(first model: ${this.models[0].name})` : "(no models configured)");
+      for (const m of this.models) d.addOption(m.name, m.name);
+      if (step.model && isModelMissing(step, this.models)) {
+        d.addOption(step.model, `${step.model} · not configured`);
+        setting.settingEl.addClass("is-warning");
+        setting.setDesc("This model was renamed or deleted. Pick one, or the step stops the action.");
+      }
+      d.setValue(step.model).onChange((v) => {
+        step.model = v;
+        this.renderRail();
+        this.renderPane();
+      });
+    });
   }
 
   // The reorderable option list of a Choice step.
@@ -477,6 +570,64 @@ export class ActionEditModal extends Modal {
     });
   }
 
+  // A model step's reply: one value, or several fields the model fills in one call.
+  private renderOutputs(setting: Setting, step: Step, i: number): void {
+    if (step.type !== "llm") return;
+    const several = step.outputs.length > 0;
+    setting.setDesc(several ? "The model fills in each field in one call, and each becomes its own value." : "The whole reply becomes one value.");
+    setting.addDropdown((d) =>
+      d
+        .addOption("one", "One value")
+        .addOption("several", "Several values")
+        .setValue(several ? "several" : "one")
+        .onChange((v) => {
+          if (v === "several") {
+            step.outputs = [{ name: step.variable, desc: "", choices: [] }];
+          } else {
+            const kept = step.outputs.find((o) => o.name === step.variable) ? step.variable : (step.outputs[0]?.name ?? step.variable);
+            const lost = step.outputs.filter((o) => o.name !== kept && consumersOf(this.steps, i, o.name).length > 0);
+            step.variable = kept;
+            step.outputs = [];
+            if (lost.length) new Notice(lostSource(lost.map((o) => o.name)));
+          }
+          this.renderRail();
+          this.renderPane();
+        }),
+    );
+    if (!several) return;
+    setting.settingEl.addClass("is-stacked", "is-outputs");
+    const list = setting.controlEl.createDiv("quick-actions-outputs");
+    step.outputs.forEach((out: LLMOutput, k) => {
+      const row = list.createDiv("quick-actions-output-row");
+      const name = row.createEl("input", { type: "text", cls: "quick-actions-mono", placeholder: "name", attr: { "aria-label": "Value name" } });
+      name.value = out.name;
+      name.addEventListener("change", () => {
+        const to = name.value.trim();
+        if (to !== out.name && !this.rename(i, out.name, to)) name.value = out.name;
+      });
+      const desc = row.createEl("input", { type: "text", placeholder: "What the model should put here", attr: { "aria-label": "Description" } });
+      desc.value = out.desc;
+      desc.addEventListener("input", () => (out.desc = desc.value));
+      const choices = row.createEl("input", { type: "text", placeholder: "Choices, comma separated (optional)", attr: { "aria-label": "Choices" } });
+      choices.value = out.choices.join(", ");
+      choices.addEventListener("input", () => (out.choices = choices.value.split(",").map((c) => c.trim()).filter((c) => c !== "")));
+      if (step.outputs.length > 1) {
+        iconButton(row, "x", "Remove", () => {
+          const used = consumersOf(this.steps, i, out.name).length > 0;
+          step.outputs.splice(k, 1);
+          if (used) new Notice(lostSource([out.name]));
+          this.renderRail();
+          this.renderPane();
+        });
+      }
+    });
+    textButton(list.createDiv(), "plus", "Add value", () => {
+      step.outputs.push({ name: uniqueName("value", producedNames(this.steps)), desc: "", choices: [] });
+      this.renderRail();
+      this.renderPane();
+    });
+  }
+
   // Everything the picker can offer at step i: available inputs, then later outputs greyed out.
   private pickerItems(i: number, available: Set<string>): VarItem[] {
     const items: VarItem[] = [];
@@ -490,18 +641,17 @@ export class ActionEditModal extends Modal {
         sample: vars[input.name] !== undefined ? `“${truncate(vars[input.name], 60)}”` : undefined,
       });
     }
-    for (const b of BUILTINS) {
-      items.push({ name: b.name, type: b.type, source: BUILTIN_SAMPLES[b.name]?.source ?? "Always available", sample: vars[b.name] ?? BUILTIN_SAMPLES[b.name]?.sample, builtin: true });
-    }
+    for (const b of BUILTINS) items.push({ name: b.name, type: b.type, source: b.source, sample: vars[b.name] ?? b.sample, builtin: true });
     for (let j = i; j < this.steps.length; j++) {
-      const out = outputOf(this.steps[j]);
-      if (!out || available.has(out.name)) continue;
-      items.push({
-        name: out.name,
-        type: out.type,
-        source: `Step ${j + 1} · ${stepTitle(this.steps[j], this.models)}`,
-        unavailable: j === i ? "this step's own output" : "runs after this step",
-      });
+      for (const out of outputsOf(this.steps[j])) {
+        if (available.has(out.name)) continue;
+        items.push({
+          name: out.name,
+          type: out.type,
+          source: `Step ${j + 1} · ${stepTitle(this.steps[j], this.models)}`,
+          unavailable: j === i ? "this step's own output" : "runs after this step",
+        });
+      }
     }
     return items;
   }
@@ -519,66 +669,79 @@ export class ActionEditModal extends Modal {
     if (!this.run) return vars;
     for (const b of BUILTINS) if (this.run.vars[b.name] !== undefined) vars[b.name] = this.run.vars[b.name];
     for (const r of this.run.steps) {
-      if (r.index < i && r.output) vars[r.output.name] = r.output.value;
+      if (r.index < i) for (const o of r.outputs) vars[o.name] = o.value;
     }
     return vars;
   }
 
   private renderRunView(pane: HTMLElement, step: Step, i: number, result: StepResult): void {
     const vars = this.varsBefore(i);
+    const opts = resolveOptions(this.app, this.steps);
     const label = (text: string) => pane.createDiv({ cls: "quick-actions-result-label", text });
-    const marked = (template: string, cls = "") => {
+    const marked = (template: string, cls = "", mode: ResolveMode = "plain") => {
       const box = pane.createDiv(`quick-actions-result ${cls}`.trim());
-      for (const seg of resolveSegments(template, vars)) {
+      for (const seg of resolveSegments(template, vars, opts, mode)) {
         if (seg.name) box.createEl("mark", { text: seg.text });
         else box.appendText(seg.text);
       }
       return box;
     };
+    const muted = (text: string) => pane.createDiv({ cls: "quick-actions-result is-muted", text });
 
     if (step.type === "llm") {
-      const model = stepTitle(step, this.models);
+      const model = modelOf(step, this.models)?.name ?? (step.model || "the model");
       if (step.system_prompt) {
         label(`System prompt for ${model}`);
         marked(step.system_prompt, "is-muted");
       }
       label(`Prompt sent to ${model}`);
       marked(step.user_prompt);
+    } else if (step.type === "fetch_page") {
+      label("Fetched");
+      marked(step.url, "is-muted");
     } else if (step.type === "create_file") {
       label(result.status === "ok" ? "Would create" : "Path");
-      marked(step.path, "is-muted");
+      muted(result.resolved.path ?? step.path);
       label("Content");
-      marked(step.content, step.content.includes("---") ? "is-mono" : "");
+      marked(step.content, step.content.includes("---") ? "is-mono" : "", "note");
     } else if (step.type === "insert_in_section") {
-      label("Would insert into");
-      marked(`${step.target} under ${step.section}`, "is-muted");
-      label("Text");
-      marked(step.format);
+      if (result.preview) {
+        label("Would insert into ").createSpan({ cls: "quick-actions-result-path", text: result.resolved.target });
+        this.renderInsertPreview(pane, result.preview);
+      } else {
+        label("Would insert into");
+        marked(`${step.target} under ${step.section}`, "is-muted");
+        label("Text");
+        marked(step.format);
+      }
     } else if (step.type === "open_file") {
       label("Would open");
-      marked(step.target, "is-muted");
+      muted(result.resolved.target ?? step.target);
     } else if (step.type === "quick_task" && result.note) {
       label("Would create");
-      pane.createDiv({ cls: "quick-actions-result is-muted", text: result.note });
+      muted(result.note);
     }
 
     if (result.error) {
       label("Failed");
       pane.createDiv({ cls: "quick-actions-result is-error", text: result.error });
-    } else if (result.output) {
-      const l = label("Produced");
-      renderPill(l, result.output.name, result.output.type);
-      pane.createDiv({ cls: "quick-actions-result is-output", text: result.output.value });
-    } else if (result.note) {
-      pane.createDiv({ cls: "quick-actions-result is-muted", text: result.note });
+    } else if (result.outputs.length) {
+      for (const out of result.outputs) {
+        const l = label("Produced");
+        renderPill(l, out.name, out.type);
+        pane.createDiv({ cls: "quick-actions-result is-output", text: out.value || "(empty)" });
+      }
+    } else if (result.note && step.type !== "quick_task") {
+      muted(result.note);
     }
 
     const next = this.steps[i + 1];
-    const nextPreview = next ? previewOf(next) : null;
+    const nextPreview = next ? STEP_DEFS[next.type].preview : undefined;
     if (next && nextPreview) {
       label("Next step");
       const template = (next as unknown as Record<string, string>)[nextPreview.key];
-      marked(template, "is-muted").prepend(createSpan({ text: `${nextPreview.verb} ` }));
+      const mode = STEP_DEFS[next.type].fields.find((f) => f.key === nextPreview.key)?.resolve;
+      marked(template, "is-muted", mode).prepend(createSpan({ text: `${nextPreview.verb} ` }));
     }
 
     const actions = pane.createDiv("quick-actions-run-actions");
@@ -587,24 +750,49 @@ export class ActionEditModal extends Modal {
       if (this.running) btn.disabled = true;
     }
     actions.createEl("button", { text: "Discard run" }).addEventListener("click", () => {
-      this.run = null;
-      this.view = "edit";
-      this.renderHead();
-      this.renderRail();
-      this.renderPane();
+      this.clearRun();
+      this.refreshAll();
+    });
+  }
+
+  // The lines around the insert point as they will read, the new text marked with +.
+  private renderInsertPreview(pane: HTMLElement, p: InsertPreview): void {
+    const box = pane.createDiv("quick-actions-result quick-actions-diff");
+    p.lines.forEach((line, k) => {
+      const added = k >= p.added && k < p.added + p.count;
+      const row = box.createDiv(added ? "quick-actions-diff-line is-added" : "quick-actions-diff-line");
+      const number = added ? "+" : String(p.start + k + 1 - (k >= p.added + p.count ? p.count : 0));
+      row.createSpan({ cls: "quick-actions-diff-num", text: number });
+      row.createSpan({ cls: "quick-actions-diff-text", text: line || " " });
     });
   }
 
   // ---- Test run ----
 
+  // Runs on a copy of the draft, so editing during a model call can't change the steps it runs.
+  // When the steps changed meanwhile, the results are dropped.
   private async runTo(end: number, from = 0): Promise<void> {
     if (this.running) return;
     this.running = true;
+    const gen = this.runGen;
     this.renderHead();
-    const vars = from > 0 && this.run ? this.run.vars : undefined;
-    const result = await runAction(this.app, this.draft, this.models, { write: false, from, to: end, vars });
+    const action = JSON.parse(JSON.stringify(this.draft)) as Action;
+    const progress = new RunProgress(`Test run of ${action.name || "this action"}`, action.steps.length, this.models);
+    const result = await runAction(this.app, action, this.models, {
+      write: false,
+      from,
+      to: end,
+      vars: from > 0 && this.run ? this.run.vars : undefined,
+      onStep: (e) => progress.step(e),
+      cancelled: () => progress.cancelled,
+    });
+    progress.hide();
     if (this.closed) return;
     this.running = false;
+    if (gen !== this.runGen) {
+      this.renderHead();
+      return;
+    }
     if (from > 0 && this.run) {
       this.run = {
         steps: [...this.run.steps.filter((r) => r.index < from), ...result.steps],
@@ -618,9 +806,7 @@ export class ActionEditModal extends Modal {
     const last = result.steps[result.steps.length - 1];
     if (last?.error) new Notice(`Step ${last.index + 1} failed: ${last.error}`);
     this.view = this.resultFor(this.selected) ? "run" : "edit";
-    this.renderHead();
-    this.renderRail();
-    this.renderPane();
+    this.refreshAll();
   }
 
   // ---- Step operations (structural changes clear the run) ----
@@ -628,6 +814,7 @@ export class ActionEditModal extends Modal {
   private clearRun(): void {
     this.run = null;
     this.view = "edit";
+    this.runGen++;
   }
 
   private refreshAll(): void {
@@ -637,9 +824,7 @@ export class ActionEditModal extends Modal {
   }
 
   private addStep(type: StepType): void {
-    const step = makeStep(type);
-    if ("variable" in step) step.variable = uniqueName(step.variable, producedNames(this.steps));
-    this.steps.push(step);
+    this.steps.push(freshOutputs(makeStep(type), producedNames(this.steps)));
     this.clearRun();
     this.select(this.steps.length - 1);
   }
@@ -652,21 +837,17 @@ export class ActionEditModal extends Modal {
   }
 
   private duplicateStep(i: number): void {
-    const copy: Step = JSON.parse(JSON.stringify(this.steps[i]));
-    if ("variable" in copy) copy.variable = uniqueName(copy.variable, producedNames(this.steps));
+    const copy = freshOutputs(JSON.parse(JSON.stringify(this.steps[i])) as Step, producedNames(this.steps));
     this.steps.splice(i + 1, 0, copy);
     this.clearRun();
     this.select(i + 1);
   }
 
   private deleteStep(i: number): void {
-    const out = outputOf(this.steps[i]);
-    const consumers = consumersOf(this.steps, i);
+    const outs = outputsOf(this.steps[i]).map((o) => o.name);
+    const lost = consumersOf(this.steps, i).length > 0;
     this.steps.splice(i, 1);
-    if (out && consumers.length > 0) {
-      const names = consumers.map((j) => `${j} ${stepTitle(this.steps[j - 1], this.models)}`).join(", ");
-      new Notice(`Step ${i + 1} deleted. Steps ${names} still use {{${out.name}}} and now need a new source.`);
-    }
+    if (lost) new Notice(`Step ${i + 1} deleted. ${lostSource(outs)}`);
     this.selected = Math.max(0, Math.min(i, this.steps.length - 1));
     this.paneOpen = false;
     this.clearRun();

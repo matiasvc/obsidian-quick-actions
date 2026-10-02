@@ -2,14 +2,16 @@ import { Platform } from "obsidian";
 
 export interface DragReorderOptions {
   itemSelector: string;
-  handleSelector?: string; // press must start here; the whole item when omitted
+  handleSelector?: string; // press must start here, or anywhere on the item when omitted
   onReorder: (from: number, to: number) => void; // `to` is the item's final index
 }
 
 // Native HTML5 drag between the direct matches of itemSelector inside container.
 // Listeners are delegated so re-rendered rows keep working. Returns a disposer.
+// The container gets is-reorderable while dragging works, which is what shows the grips.
 export function enableDragReorder(container: HTMLElement, opts: DragReorderOptions): () => void {
   if (Platform.isMobile) return () => {};
+  container.addClass("is-reorderable");
 
   let armed: HTMLElement | null = null;
   let from = -1;
@@ -90,6 +92,7 @@ export function enableDragReorder(container: HTMLElement, opts: DragReorderOptio
   container.addEventListener("drop", onDrop);
   container.addEventListener("dragend", finish);
   return () => {
+    container.removeClass("is-reorderable");
     container.removeEventListener("mousedown", onMouseDown);
     container.removeEventListener("mouseup", disarm);
     container.removeEventListener("dragstart", onDragStart);

@@ -1,10 +1,13 @@
 import { Platform } from "obsidian";
 import { OutputType } from "./types";
-import { VAR_RE } from "./variables";
+import { formatRef, parseRefs, splitChain } from "./variables";
+import { isFilter } from "./text";
 import { renderPill } from "./ui";
+import { filterEntries, showMenu } from "./menus";
 
 // A text field whose {{variables}} show as pills. The value is always a plain
-// template string; the DOM is text nodes and non-editable pill spans.
+// template string, and the DOM is text nodes and non-editable pill spans. A pill
+// shows its filters after its name, and clicking it offers the filters.
 
 export interface PillFieldOptions {
   value: string;
@@ -14,25 +17,34 @@ export interface PillFieldOptions {
   placeholder?: string;
   resolve: (name: string) => { type: OutputType } | null; // null = nothing produces it
   onFocus?: () => void;
+  toolsParent?: HTMLElement; // mobile puts the { } button here, in the field's label row
 }
 
 export interface PillField {
   el: HTMLElement; // the bordered box
   editorEl: HTMLElement; // where the caret lives
-  toolsEl: HTMLElement; // top-right slot for the { } button
+  toolsEl: HTMLElement; // the slot for the { } button
   getValue(): string;
-  setValue(value: string): void; // rebuilds; use only for external changes
-  refresh(): void; // recomputes pill looks without touching the caret
+  setValue(value: string): void; // rebuilds, so only for external changes
   insertPill(name: string): void;
+  addFilterAtCaret(id: string): boolean; // to the reference just before the caret
   focus(): void;
   isFocused(): boolean;
   pickerOpen: () => boolean; // set by the variable picker
 }
 
-// A zero-width space after each pill gives the caret a place to sit; stripped on read.
+// A zero-width space after each pill gives the caret a place to sit. Reads strip it.
 const ZWSP = String.fromCharCode(0x200b);
 const ZWSP_RE = new RegExp(ZWSP, "g");
 const NBSP_RE = new RegExp(String.fromCharCode(0xa0), "g");
+const FOLD_LINES = 6;
+
+// The filter menu for one reference. `toggle` adds or removes a filter, `clear` removes them all.
+function showFilterMenu(evt: MouseEvent, name: string, current: string[], toggle: (id: string) => void, clear: () => void): void {
+  const entries = [{ title: `Filter ${name}`, label: true, section: "filters" }, ...filterEntries(toggle, current)];
+  if (current.length > 0) entries.push({ title: "Remove filters", icon: "x", section: "clear", click: clear });
+  showMenu(entries, evt);
+}
 
 export function createPillField(parent: HTMLElement, opts: PillFieldOptions): PillField {
   const el = parent.createDiv("quick-actions-field");
@@ -47,11 +59,19 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
   let savedRange: Range | null = null;
   let lastValue = opts.value;
 
-  const pillEl = (name: string): HTMLElement => {
+  const setFilters = (pill: HTMLElement, filters: string[]) => {
+    pill.setAttr("data-filters", filters.join("|"));
+    for (const chip of Array.from(pill.querySelectorAll(".quick-actions-pill-filter"))) chip.remove();
+    for (const f of filters) pill.createSpan({ cls: isFilter(f) ? "quick-actions-pill-filter" : "quick-actions-pill-filter is-unknown", text: f });
+  };
+
+  const pillEl = (name: string, filters: string[] = []): HTMLElement => {
     const known = opts.resolve(name);
     const pill = renderPill(editorEl, name, known?.type ?? null, { inline: true, unknown: !known });
     pill.setAttr("contenteditable", "false");
     pill.setAttr("data-pill", name);
+    pill.setAttr("aria-label", "Click to add a filter, like slug or trim");
+    setFilters(pill, filters);
     pill.remove();
     return pill;
   };
@@ -60,12 +80,11 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
   const nodesFor = (template: string): Node[] => {
     const nodes: Node[] = [];
     let last = 0;
-    for (const m of template.matchAll(VAR_RE)) {
-      const start = m.index ?? 0;
-      if (start > last) nodes.push(doc.createTextNode(template.slice(last, start)));
-      nodes.push(pillEl(m[1]));
+    for (const ref of parseRefs(template)) {
+      if (ref.index > last) nodes.push(doc.createTextNode(template.slice(last, ref.index)));
+      nodes.push(pillEl(ref.name, ref.filters));
       nodes.push(doc.createTextNode(ZWSP));
-      last = start + m[0].length;
+      last = ref.index + ref.length;
     }
     if (last < template.length) nodes.push(doc.createTextNode(template.slice(last)));
     return nodes;
@@ -75,7 +94,7 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
     if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
     if (!(node instanceof HTMLElement)) return "";
     const pill = node.getAttr("data-pill");
-    if (pill) return `{{${pill}}}`;
+    if (pill) return formatRef(pill, splitChain(node.getAttr("data-filters")));
     if (node.tagName === "BR") return "\n";
     const inner = Array.from(node.childNodes).map(serialize).join("");
     return node.tagName === "DIV" || node.tagName === "P" ? "\n" + inner : inner;
@@ -158,8 +177,8 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
 
   // A pill directly before (dir -1) or after (dir 1) a collapsed caret, skipping zero-width anchors.
   const adjacentPill = (dir: -1 | 1): HTMLElement | null => {
-    const range = selectionRange();
-    if (!range || !range.collapsed) return null;
+    const range = selectionRange() ?? savedRange;
+    if (!range || !range.collapsed || !editorEl.contains(range.startContainer)) return null;
     const node: Node = range.startContainer;
     let sibling: Node | null;
     if (node.nodeType === Node.TEXT_NODE) {
@@ -178,12 +197,18 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
     return sibling instanceof HTMLElement && sibling.hasAttribute("data-pill") ? sibling : null;
   };
 
-  // Turns a completed {{name}} typed by hand into a pill.
+  const toggleFilter = (pill: HTMLElement, id: string) => {
+    const current = splitChain(pill.getAttr("data-filters"));
+    setFilters(pill, current.includes(id) ? current.filter((f) => f !== id) : [...current, id]);
+    emitChange();
+  };
+
+  // Turns a completed {{name}} or {{name|filter}} typed by hand into a pill.
   const pillifyTyped = () => {
     for (const node of Array.from(editorEl.childNodes)) {
       if (node.nodeType !== Node.TEXT_NODE) continue;
       const text = node.textContent ?? "";
-      if (!/\{\{\w+\}\}/.test(text)) continue;
+      if (parseRefs(text).length === 0) continue;
       const nodes = nodesFor(text);
       const last = nodes[nodes.length - 1];
       for (const n of nodes) editorEl.insertBefore(n, node);
@@ -192,6 +217,31 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
     }
   };
 
+  // A long value shows its first lines until the field is clicked or "Show all" is.
+  let moreEl: HTMLElement | null = null;
+  const unfold = () => {
+    el.removeClass("is-folded");
+    moreEl?.remove();
+    moreEl = null;
+  };
+  const lineCount = opts.value.split("\n").length;
+  if (opts.multiline && lineCount > FOLD_LINES) {
+    el.addClass("is-folded");
+    moreEl = el.createDiv({ cls: "quick-actions-field-more", text: `Show all ${lineCount} lines` });
+    moreEl.addEventListener("mousedown", (evt) => evt.preventDefault());
+    moreEl.addEventListener("click", unfold);
+  }
+
+  editorEl.addEventListener("click", (evt) => {
+    const pill = evt.target instanceof HTMLElement ? evt.target.closest<HTMLElement>("[data-pill]") : null;
+    if (!pill || !editorEl.contains(pill)) return;
+    evt.preventDefault();
+    const name = pill.getAttr("data-pill") ?? "";
+    showFilterMenu(evt, name, splitChain(pill.getAttr("data-filters")), (id) => toggleFilter(pill, id), () => {
+      setFilters(pill, []);
+      emitChange();
+    });
+  });
   editorEl.addEventListener("input", (evt) => {
     if (!(evt instanceof InputEvent)) return; // synthetic events come from the picker
     if (evt.isComposing) return;
@@ -231,6 +281,7 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
   editorEl.addEventListener("mouseup", saveCaret);
   editorEl.addEventListener("focus", () => {
     el.addClass("is-focus");
+    unfold();
     opts.onFocus?.();
   });
   editorEl.addEventListener("blur", () => {
@@ -246,14 +297,13 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
     toolsEl,
     getValue,
     setValue: render,
-    refresh: () => {
-      for (const pill of Array.from(editorEl.querySelectorAll<HTMLElement>("[data-pill]"))) {
-        const known = opts.resolve(pill.getAttr("data-pill") ?? "");
-        pill.toggleClass("is-unknown", !known);
-        pill.toggleClass("is-file", known?.type === "file");
-      }
-    },
     insertPill: (name) => insertNodes([pillEl(name), doc.createTextNode(ZWSP)]),
+    addFilterAtCaret: (id) => {
+      const pill = adjacentPill(-1);
+      if (!pill) return false;
+      if (!splitChain(pill.getAttr("data-filters")).includes(id)) toggleFilter(pill, id);
+      return true;
+    },
     focus: () => editorEl.focus(),
     isFocused: () => doc.activeElement === editorEl,
     pickerOpen: () => false,
@@ -261,14 +311,16 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
   return field;
 }
 
-// Mobile keeps a plain textarea showing raw {{name}}; the In band still inserts.
+// Mobile keeps a plain text field showing raw {{name}}. The In band still inserts, and the { } menu
+// adds filters to the reference before the caret.
 function mobileField(el: HTMLElement, opts: PillFieldOptions): PillField {
   const editorEl = opts.multiline
-    ? el.createEl("textarea", { cls: "quick-actions-field-editor", attr: { rows: 4 } })
+    ? el.createEl("textarea", { cls: "quick-actions-field-editor", attr: { rows: 10 } })
     : el.createEl("input", { cls: "quick-actions-field-editor", attr: { type: "text" } });
   if (opts.placeholder) editorEl.placeholder = opts.placeholder;
   editorEl.value = opts.value;
-  const toolsEl = el.createDiv("quick-actions-field-tools");
+  const toolsEl = (opts.toolsParent ?? el).createDiv("quick-actions-field-tools");
+  if (opts.toolsParent) toolsEl.addClass("is-in-label");
   editorEl.addEventListener("input", () => opts.onChange(editorEl.value));
   editorEl.addEventListener("focus", () => {
     el.addClass("is-focus");
@@ -283,13 +335,25 @@ function mobileField(el: HTMLElement, opts: PillFieldOptions): PillField {
     setValue: (v) => {
       editorEl.value = v;
     },
-    refresh: () => {},
     insertPill: (name) => {
       const start = editorEl.selectionStart ?? editorEl.value.length;
       const end = editorEl.selectionEnd ?? start;
-      editorEl.setRangeText(`{{${name}}}`, start, end, "end");
+      editorEl.setRangeText(formatRef(name), start, end, "end");
       editorEl.focus();
       opts.onChange(editorEl.value);
+    },
+    addFilterAtCaret: (id) => {
+      const caret = editorEl.selectionStart ?? editorEl.value.length;
+      const before = editorEl.value.slice(0, caret);
+      const ref = parseRefs(before).pop();
+      if (!ref || ref.index + ref.length !== before.length) return false;
+      if (!ref.filters.includes(id)) {
+        editorEl.setRangeText(`|${id}`, caret - 2, caret - 2, "end");
+        editorEl.setSelectionRange(caret + id.length + 1, caret + id.length + 1);
+        opts.onChange(editorEl.value);
+      }
+      editorEl.focus();
+      return true;
     },
     focus: () => editorEl.focus(),
     isFocused: () => el.doc.activeElement === editorEl,
