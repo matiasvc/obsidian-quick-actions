@@ -1,88 +1,123 @@
-import { App, FuzzySuggestModal, Modal, TFile } from "obsidian";
+import { App, FuzzyMatch, FuzzySuggestModal, Keymap, Modal, Platform, TFile, getIconIds, renderResults, setIcon } from "obsidian";
+import { Action } from "./types";
+import { actionUses, loadDraft, recentFiles, saveDraft } from "./recent";
 
+declare const window: Window & { moment: typeof import("moment") };
+
+export interface PromptOptions {
+  title: string; // the action's name
+  label: string;
+  multiline: boolean;
+  initial: string;
+  draftKey: string; // where unsent text is kept, per action and step
+}
+
+// Unsent text survives Esc and the close button and comes back the next time the same prompt
+// opens. Cancel throws it away.
 export class PromptModal extends Modal {
-  private resolve: (value: string | null) => void;
-  private label: string;
-  private multiline: boolean;
-  private inputElement: HTMLInputElement | HTMLTextAreaElement;
+  private input: HTMLInputElement | HTMLTextAreaElement;
   private submitted = false;
+  private discarded = false;
 
-  constructor(app: App, label: string, multiline: boolean, resolve: (value: string | null) => void) {
+  constructor(app: App, private opts: PromptOptions, private resolve: (value: string | null) => void) {
     super(app);
-    this.label = label;
-    this.multiline = multiline;
-    this.resolve = resolve;
   }
 
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.createEl("label", { text: this.label });
+  onOpen(): void {
+    const { contentEl, opts } = this;
+    this.modalEl.addClass("quick-actions-prompt");
+    this.setTitle(opts.title);
+    const id = `quick-actions-prompt-${Date.now()}`;
+    if (opts.label) contentEl.createEl("label", { cls: "quick-actions-prompt-label", text: opts.label.replace(/:\s*$/, ""), attr: { for: id } });
+    this.input = opts.multiline
+      ? contentEl.createEl("textarea", { cls: "quick-actions-prompt-textarea", attr: { id, rows: 6 } })
+      : contentEl.createEl("input", { cls: "quick-actions-prompt-input", attr: { id, type: "text" } });
+    const draft = loadDraft(this.app, opts.draftKey);
+    this.input.value = draft?.text ?? opts.initial;
 
-    if (this.multiline) {
-      // Multiline text input
-      const textarea = contentEl.createEl("textarea");
-      textarea.addClass("quick-actions-prompt-textarea");
-      textarea.rows = 6;
-
-      this.inputElement = textarea;
-      textarea.focus();
-
-      textarea.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-          e.preventDefault();
-          this.submitted = true;
-          this.close();
-        }
-      });
-
-      const footer = contentEl.createDiv("quick-actions-prompt-footer");
-
-      // Submit button
-      const btn = footer.createEl("button", { text: "Submit" });
-      btn.addClass("mod-cta");
-      btn.addEventListener("click", () => {
-        this.submitted = true;
-        this.close();
-      });
-
-    } else {
-      // Text input
-      const input = contentEl.createEl("input", { type: "text" });
-      input.addClass("quick-actions-prompt-input");
-
-      this.inputElement = input;
-      input.focus();
-
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          this.submitted = true;
-          this.close();
-        }
-      });
+    const footer = contentEl.createDiv("quick-actions-prompt-footer");
+    const hint = footer.createDiv("quick-actions-prompt-hint");
+    if (draft) hint.createSpan({ text: `Restored from ${window.moment(draft.at).format("HH:mm")}` });
+    if (!Platform.isMobile) {
+      if (draft) hint.appendText(" · ");
+      if (opts.multiline) {
+        hint.createEl("kbd", { text: Platform.isMacOS ? "⌘" : "Ctrl" });
+        hint.appendText(" ");
+      }
+      hint.createEl("kbd", { text: "Enter" });
+      hint.appendText(" to save");
     }
+    footer.createEl("button", { text: "Cancel" }).addEventListener("click", () => {
+      this.discarded = true;
+      this.close();
+    });
+    footer.createEl("button", { text: "Save", cls: "mod-cta" }).addEventListener("click", () => this.submit());
+
+    this.input.addEventListener("keydown", (evt: KeyboardEvent) => {
+      if (evt.key !== "Enter" || evt.isComposing) return;
+      if (opts.multiline && !Keymap.isModifier(evt, "Mod")) return;
+      evt.preventDefault();
+      this.submit();
+    });
+    this.input.focus();
+    this.input.setSelectionRange(this.input.value.length, this.input.value.length);
   }
 
-  onClose() {
-    this.resolve(this.submitted ? this.inputElement.value : null);
+  private submit(): void {
+    this.submitted = true;
+    this.close();
+  }
+
+  onClose(): void {
+    const value = this.input.value;
+    const keep = !this.submitted && !this.discarded && value.trim() !== "" && value !== this.opts.initial;
+    saveDraft(this.app, this.opts.draftKey, keep ? value : "");
+    this.contentEl.empty();
+    this.resolve(this.submitted ? value : null);
   }
 }
 
-export function openPromptModal(app: App, label: string, multiline: boolean): Promise<string | null> {
-  return new Promise((resolve) => {
-    new PromptModal(app, label, multiline, resolve).open();
-  });
+export function openPromptModal(app: App, opts: PromptOptions): Promise<string | null> {
+  return new Promise((resolve) => new PromptModal(app, opts, resolve).open());
 }
 
-export class FilePickerModal extends FuzzySuggestModal<TFile> {
-  private resolve: (value: TFile | null) => void;
-  private files: TFile[];
+// Resolves with the picked item, or null when closed without a pick. A pick closes the modal
+// before it chooses, so selectSuggestion marks it first.
+abstract class PickModal<T> extends FuzzySuggestModal<T> {
   private picked = false;
 
-  constructor(app: App, files: TFile[], resolve: (value: TFile | null) => void) {
+  constructor(app: App, private resolveWith: (value: T | null) => void) {
     super(app);
-    this.files = files;
-    this.resolve = resolve;
+  }
+
+  selectSuggestion(value: FuzzyMatch<T>, evt: MouseEvent | KeyboardEvent): void {
+    this.picked = true;
+    super.selectSuggestion(value, evt);
+  }
+
+  onChooseItem(item: T): void {
+    this.resolveWith(item);
+  }
+
+  onClose(): void {
+    if (!this.picked) this.resolveWith(null);
+  }
+}
+
+// Files you picked recently first, then the rest A to Z, each with its folder and last edit.
+export class FilePickerModal extends PickModal<TFile> {
+  private recent: Set<string>;
+
+  constructor(app: App, private files: TFile[], label: string, recentKey: string, resolve: (value: TFile | null) => void) {
+    super(app, resolve);
+    this.setPlaceholder(label || "Pick a file");
+    const recent = recentFiles(app, recentKey);
+    this.recent = new Set(recent);
+    const rank = (f: TFile) => {
+      const i = recent.indexOf(f.path);
+      return i === -1 ? recent.length : i;
+    };
+    this.files = [...files].sort((a, b) => rank(a) - rank(b) || a.basename.localeCompare(b.basename));
   }
 
   getItems(): TFile[] {
@@ -93,32 +128,20 @@ export class FilePickerModal extends FuzzySuggestModal<TFile> {
     return item.basename;
   }
 
-  onChooseItem(item: TFile) {
-    this.picked = true;
-    this.resolve(item);
-  }
-
-  onClose() {
-    // FuzzySuggestModal fires onClose before onChooseItem when an item is
-    // selected. Delay the cancellation check so onChooseItem can set the
-    // picked flag first.
-    setTimeout(() => {
-      if (!this.picked) {
-        this.resolve(null);
-      }
-    }, 50);
+  renderSuggestion(match: FuzzyMatch<TFile>, el: HTMLElement): void {
+    const file = match.item;
+    el.addClass("mod-complex");
+    const content = el.createDiv("suggestion-content");
+    renderResults(content.createDiv("suggestion-title"), file.basename, match.match);
+    const folder = file.parent && !file.parent.isRoot() ? `${file.parent.path} · ` : "";
+    content.createDiv({ cls: "suggestion-note", text: `${folder}edited ${window.moment(file.stat.mtime).fromNow()}` });
+    if (this.recent.has(file.path)) el.createDiv("suggestion-aux").createSpan({ cls: "suggestion-flair quick-actions-flair", text: "Recent" });
   }
 }
 
-export class ChoiceModal extends FuzzySuggestModal<string> {
-  private resolve: (value: string | null) => void;
-  private options: string[];
-  private picked = false;
-
-  constructor(app: App, label: string, options: string[], resolve: (value: string | null) => void) {
-    super(app);
-    this.options = options;
-    this.resolve = resolve;
+export class ChoiceModal extends PickModal<string> {
+  constructor(app: App, label: string, private options: string[], resolve: (value: string | null) => void) {
+    super(app, resolve);
     this.setPlaceholder(label);
   }
 
@@ -129,42 +152,86 @@ export class ChoiceModal extends FuzzySuggestModal<string> {
   getItemText(item: string): string {
     return item;
   }
-
-  onChooseItem(item: string) {
-    this.picked = true;
-    this.resolve(item);
-  }
-
-  onClose() {
-    // FuzzySuggestModal fires onClose before onChooseItem when an item is
-    // selected. Delay the cancellation check so onChooseItem can set the
-    // picked flag first.
-    setTimeout(() => {
-      if (!this.picked) {
-        this.resolve(null);
-      }
-    }, 50);
-  }
 }
 
 export function openChoiceModal(app: App, label: string, options: string[]): Promise<string | null> {
-  return new Promise((resolve) => {
-    new ChoiceModal(app, label, options, resolve).open();
-  });
+  return new Promise((resolve) => new ChoiceModal(app, label, options, resolve).open());
 }
 
-export function openFilePickerModal(app: App, folder: string): Promise<string | null> {
-  const files = app.vault.getMarkdownFiles()
-    .filter((f) => f.path.startsWith(folder))
-    .sort((a, b) => a.basename.localeCompare(b.basename));
+// Picks one of the notes in `folder` (a path prefix, "" for the whole vault). Null when cancelled,
+// undefined when the folder has no notes.
+export function openFilePickerModal(app: App, folder: string, label: string, recentKey: string): Promise<string | null | undefined> {
+  const prefix = folder && !folder.endsWith("/") ? folder + "/" : folder;
+  const files = app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(prefix));
+  if (files.length === 0) return Promise.resolve(undefined);
+  return new Promise((resolve) => new FilePickerModal(app, files, label, recentKey, (file) => resolve(file ? file.path : null)).open());
+}
 
-  if (files.length === 0) {
-    return Promise.resolve(null);
+// "used today", "used yesterday" or "used 4 Sep", for when an action last ran.
+function usedLabel(at: number): string {
+  const m = window.moment(at);
+  if (m.isSame(window.moment(), "day")) return "used today";
+  if (m.isSame(window.moment().subtract(1, "day"), "day")) return "used yesterday";
+  return `used ${m.format("D MMM")}`;
+}
+
+// The launcher: every action, the most recently run first.
+export class ActionPickerModal extends FuzzySuggestModal<Action> {
+  private uses: Record<string, number>;
+
+  constructor(app: App, private actions: Action[], private run: (action: Action) => void) {
+    super(app);
+    this.uses = actionUses(app);
+    this.setPlaceholder("Run a quick action");
+    this.actions = [...actions].sort((a, b) => (this.uses[b.id] ?? 0) - (this.uses[a.id] ?? 0));
   }
 
-  return new Promise((resolve) => {
-    new FilePickerModal(app, files, (file) => {
-      resolve(file ? file.path : null);
-    }).open();
-  });
+  getItems(): Action[] {
+    return this.actions;
+  }
+
+  getItemText(item: Action): string {
+    return item.name;
+  }
+
+  renderSuggestion(match: FuzzyMatch<Action>, el: HTMLElement): void {
+    el.addClass("mod-complex", "quick-actions-launch-item");
+    setIcon(el.createDiv("suggestion-icon"), match.item.icon);
+    renderResults(el.createDiv("suggestion-content").createDiv("suggestion-title"), match.item.name, match.match);
+    const used = this.uses[match.item.id];
+    if (used) el.createDiv("suggestion-aux").createSpan({ cls: "suggestion-hotkey", text: usedLabel(used) });
+  }
+
+  onChooseItem(item: Action): void {
+    this.run(item);
+  }
+}
+
+// Every icon Obsidian ships, searchable by name. Lucide icons go by their short name, which
+// setIcon accepts too.
+export class IconPickerModal extends FuzzySuggestModal<string> {
+  private icons = getIconIds().map((id) => id.replace(/^lucide-/, ""));
+
+  constructor(app: App, private choose: (icon: string) => void) {
+    super(app);
+    this.setPlaceholder("Search icons");
+  }
+
+  getItems(): string[] {
+    return this.icons;
+  }
+
+  getItemText(item: string): string {
+    return item;
+  }
+
+  renderSuggestion(match: FuzzyMatch<string>, el: HTMLElement): void {
+    el.addClass("mod-complex", "quick-actions-launch-item");
+    setIcon(el.createDiv("suggestion-icon"), match.item);
+    renderResults(el.createDiv("suggestion-content").createDiv("suggestion-title"), match.item, match.match);
+  }
+
+  onChooseItem(item: string): void {
+    this.choose(item);
+  }
 }
