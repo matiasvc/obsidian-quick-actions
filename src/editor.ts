@@ -12,9 +12,11 @@ import {
   isModelMissing,
   makeStep,
   modelOf,
+  outputHintOf,
   outputsOf,
   stepLabel,
   stepTitle,
+  withoutUnavailable,
 } from "./steps";
 import { BUILTINS, availableInputs, consumersOf, producedNames, renameOutput, resolveSegments, resolveStep, uniqueName, usedInputs } from "./variables";
 import { InsertPreview } from "./insert";
@@ -377,7 +379,7 @@ export class ActionEditModal extends Modal {
     const band = card.createDiv("quick-actions-band is-out");
     band.createSpan({ cls: "quick-actions-band-lead", text: "Out" });
     for (const out of outs) this.outPill(band, out, i);
-    const hint = step.type === "llm" && step.outputs.length ? "one value per field" : def.outputHint;
+    const hint = outputHintOf(step);
     band.createSpan({ cls: "quick-actions-hint", text: outs.length ? `${hint} · ${this.usedByText(i)}` : hint });
   }
 
@@ -439,7 +441,10 @@ export class ActionEditModal extends Modal {
   private renderField(body: HTMLElement, step: Step, f: FieldDef, i: number, inBand: HTMLElement): void {
     const record = step as unknown as Record<string, unknown>;
     const setting = new Setting(body).setName(f.label);
-    if (f.desc) setting.setDesc(f.desc);
+    // A control its model can't use is off, and says why in place of its description.
+    const reason = f.unavailable?.(step, this.models);
+    const desc = reason ?? f.desc;
+    if (desc) setting.setDesc(desc);
     const edited = () => this.renderInBand(inBand, i);
     switch (f.kind) {
       case "text":
@@ -452,20 +457,25 @@ export class ActionEditModal extends Modal {
         return;
       case "toggle":
         setting.addToggle((t) =>
-          t.setValue(Boolean(record[f.key])).onChange((v) => {
-            record[f.key] = v;
-            if (STEP_DEFS[step.type].fields.some((other) => other.showIf)) this.renderPane();
-          }),
+          t
+            .setDisabled(reason !== undefined)
+            .setValue(Boolean(record[f.key]))
+            .onChange((v) => {
+              const changed = this.changeOutputs(i, step, () => (record[f.key] = v));
+              if (!changed && STEP_DEFS[step.type].fields.some((other) => other.showIf)) this.renderPane();
+            }),
         );
         return;
       case "dropdown":
         setting.addDropdown((d) => {
           for (const o of f.options ?? []) d.addOption(o.value, o.label);
-          d.setValue(String(record[f.key] ?? "")).onChange((v) => (record[f.key] = v));
+          d.setDisabled(reason !== undefined)
+            .setValue(String(record[f.key] ?? ""))
+            .onChange((v) => (record[f.key] = v));
         });
         return;
       case "model":
-        this.renderModel(setting, step);
+        this.renderModel(setting, step, i);
         return;
       case "folder":
         setting.addText((t) => {
@@ -513,8 +523,9 @@ export class ActionEditModal extends Modal {
     }
   }
 
-  // The configured models, plus the one the step names when that one is gone.
-  private renderModel(setting: Setting, step: Step): void {
+  // The configured models, plus the one the step names when that one is gone. Picking a model resets
+  // the values it can't take, such as Haiku's effort.
+  private renderModel(setting: Setting, step: Step, i: number): void {
     if (step.type !== "llm") return;
     setting.addDropdown((d) => {
       d.addOption("", this.models.length ? `(first model: ${this.models[0].name})` : "(no models configured)");
@@ -525,11 +536,32 @@ export class ActionEditModal extends Modal {
         setting.setDesc("This model was renamed or deleted. Pick one, or the step stops the action.");
       }
       d.setValue(step.model).onChange((v) => {
-        step.model = v;
-        this.renderRail();
-        this.renderPane();
+        const changed = this.changeOutputs(i, step, () => {
+          step.model = v;
+          Object.assign(step, withoutUnavailable(step, this.models));
+        });
+        if (!changed) {
+          this.renderRail();
+          this.renderPane();
+        }
       });
     });
+  }
+
+  // Makes a change to step i that can add or remove outputs. An added output gets a name nothing
+  // else produces, and a removed one that later steps use raises a notice. Redraws and returns true
+  // when the outputs changed.
+  private changeOutputs(i: number, step: Step, change: () => void): boolean {
+    const before = outputsOf(step).map((o) => o.name);
+    change();
+    if (outputsOf(step).length > before.length) freshOutputs(step, producedNames(this.steps.filter((s) => s !== step)));
+    const after = outputsOf(step).map((o) => o.name);
+    const lost = before.filter((name) => !after.includes(name) && consumersOf(this.steps, i, name).length > 0);
+    if (lost.length) new Notice(lostSource(lost));
+    if (before.join() === after.join()) return false;
+    this.renderRail();
+    this.renderPane();
+    return true;
   }
 
   // The reorderable option list of a Choice step.
@@ -696,6 +728,7 @@ export class ActionEditModal extends Modal {
       }
       label(`Prompt sent to ${model}`);
       marked(step.user_prompt);
+      if (result.note) muted(result.note);
     } else if (step.type === "fetch_page") {
       label("Fetched");
       marked(step.url, "is-muted");
