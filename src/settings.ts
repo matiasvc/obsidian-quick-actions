@@ -1,15 +1,27 @@
 import { App, Notice, PluginSettingTab, Setting, setIcon } from "obsidian";
-import { Action, ModelConfig, generateId } from "./types";
+import { Action, LLMStep, ModelConfig, generateId, makeAction } from "./types";
+import { uniqueName } from "./variables";
 import QuickActionsPlugin from "./main";
 import { STARTERS } from "./starters";
 import { providerLabel } from "./llm";
-import { chainEl, copyUri, emptyEl, textButton } from "./ui";
+import { UNDO_NOTICE_MS, chainEl, copyUri, emptyEl, linkNotice, textButton } from "./ui";
 import { showRowMenu } from "./menus";
 import { enableDragReorder, moveItem } from "./dragreorder";
 import { ModelEditModal } from "./model-editor";
 import { ActionEditModal } from "./editor";
 
-const UNDO_NOTICE_MS = 8000;
+// The whole row opens its editor, which is how a phone edits, and the pencil button does the same
+// on a desktop. The other buttons and the grip keep their own jobs.
+function openOnClick(row: Setting, open: () => void): void {
+  row.settingEl.addEventListener("click", (evt) => {
+    if (evt.target instanceof HTMLElement && evt.target.closest(".clickable-icon, .extra-setting-button, .quick-actions-grip")) return;
+    open();
+  });
+  row.addExtraButton((b) => {
+    b.setIcon("pencil").setTooltip("Edit").onClick(open);
+    b.extraSettingsEl.addClass("quick-actions-edit-button");
+  });
+}
 
 export class QuickActionsSettingTab extends PluginSettingTab {
   plugin: QuickActionsPlugin;
@@ -30,9 +42,9 @@ export class QuickActionsSettingTab extends PluginSettingTab {
       .setHeading()
       .setName("Actions")
       // eslint-disable-next-line obsidianmd/ui/sentence-case -- URI is an acronym
-      .setDesc("Each action is a chain of steps and runs as a command from the palette, a hotkey, or its URI.")
+      .setDesc("Each action is a chain of steps and runs from the palette, a hotkey, the ribbon, the launcher or its URI.")
       .addButton((b) => {
-        b.setButtonText("Add action").onClick(() => this.editAction(null, { id: generateId(), name: "New action", steps: [] }));
+        b.setButtonText("Add action").onClick(() => this.editAction(null, makeAction("New action")));
         if (actions.length === 0) b.setCta();
       });
 
@@ -82,7 +94,7 @@ export class QuickActionsSettingTab extends PluginSettingTab {
     setIcon(grip, "grip-vertical");
     row.settingEl.prepend(grip);
     chainEl(row.descEl, action.steps, models);
-    row.addExtraButton((b) => b.setIcon("pencil").setTooltip("Edit").onClick(() => this.editAction(action, action)));
+    openOnClick(row, () => this.editAction(action, action));
     row.addExtraButton((b) =>
       b
         .setIcon("ellipsis-vertical")
@@ -117,9 +129,9 @@ export class QuickActionsSettingTab extends PluginSettingTab {
     const { models } = this.plugin.settings;
     const row = new Setting(parent).setName(model.name || "Unnamed model");
     row.settingEl.addClass("quick-actions-row");
-    row.descEl.appendText(`${providerLabel(model.provider)} · ${model.model || "no model id"} · key `);
+    row.descEl.appendText(`${providerLabel(model.provider)} · ${model.model || "no model ID"} · key `);
     row.descEl.createSpan({ cls: "quick-actions-var", text: model.secret_id || "none" });
-    row.addExtraButton((b) => b.setIcon("pencil").setTooltip("Edit").onClick(() => this.editModel(model, model)));
+    openOnClick(row, () => this.editModel(model, model));
     row.addExtraButton((b) =>
       b
         .setIcon("ellipsis-vertical")
@@ -131,7 +143,7 @@ export class QuickActionsSettingTab extends PluginSettingTab {
                 title: "Duplicate",
                 icon: "copy",
                 click: () => {
-                  models.splice(index + 1, 0, { ...model, name: `${model.name} copy` });
+                  models.splice(index + 1, 0, { ...model, name: uniqueName(`${model.name} copy`, models.map((m) => m.name)) });
                   this.save();
                 },
               },
@@ -142,7 +154,10 @@ export class QuickActionsSettingTab extends PluginSettingTab {
               moveItem(models, index, to);
               this.save();
             },
-            onDelete: () => this.deleteItem(models, index, `Deleted "${model.name}"`),
+            onDelete: () => {
+              const users = this.stepsUsing(model.name).length;
+              this.deleteItem(models, index, `Deleted "${model.name}"${users ? `. ${users === 1 ? "1 step uses" : `${users} steps use`} it and will stop until it gets another model` : ""}`);
+            },
           }),
         ),
     );
@@ -157,26 +172,42 @@ export class QuickActionsSettingTab extends PluginSettingTab {
     }).open();
   }
 
+  // A renamed model takes its steps along, so none of them stops on a missing model.
   private editModel(existing: ModelConfig | null, source: ModelConfig): void {
-    new ModelEditModal(this.app, source, existing === null, (result) => {
-      if (existing) Object.assign(existing, result);
-      else this.plugin.settings.models.push(result);
+    const others = this.plugin.settings.models.filter((m) => m !== existing);
+    new ModelEditModal(this.app, source, existing === null, others, (result) => {
+      if (existing) {
+        const users = existing.name !== result.name ? this.stepsUsing(existing.name) : [];
+        for (const step of users) step.model = result.name;
+        if (users.length) new Notice(`Renamed ${existing.name} to ${result.name} in ${users.length === 1 ? "1 step" : `${users.length} steps`}`);
+        Object.assign(existing, result);
+      } else {
+        this.plugin.settings.models.push(result);
+      }
       this.save();
     }).open();
+  }
+
+  private stepsUsing(modelName: string): LLMStep[] {
+    return this.plugin.settings.actions.flatMap((a) => a.steps.filter((s): s is LLMStep => s.type === "llm" && s.model === modelName));
   }
 
   private deleteItem<T>(list: T[], index: number, message: string): void {
     const [removed] = list.splice(index, 1);
     this.save();
-    const notice = new Notice("", UNDO_NOTICE_MS);
-    notice.messageEl.setText(`${message}. `);
-    const undo = notice.messageEl.createEl("a", { text: "Undo" });
-    undo.addEventListener("click", (evt) => {
-      evt.preventDefault();
-      notice.hide();
-      list.splice(Math.min(index, list.length), 0, removed);
-      this.save();
-    });
+    linkNotice(
+      [message],
+      [
+        {
+          text: "Undo",
+          click: () => {
+            list.splice(Math.min(index, list.length), 0, removed);
+            this.save();
+          },
+        },
+      ],
+      UNDO_NOTICE_MS,
+    );
   }
 
   private save(): void {

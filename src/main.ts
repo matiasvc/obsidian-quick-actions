@@ -1,37 +1,78 @@
 import { Notice, Plugin } from "obsidian";
-import { QuickActionsSettings, toSlug } from "./types";
+import { Action, DEFAULT_ACTION_ICON, LLMOutput, QuickActionsSettings, Step, toSlug } from "./types";
+import { STEP_DEFS, makeStep } from "./steps";
 import { executeAction } from "./executor";
+import { ActionPickerModal } from "./modals";
 import { QuickActionsSettingTab } from "./settings";
+
+// URI parameters that are not step values.
+const URI_KEYS = new Set(["action", "vault", "run"]);
+
+interface Ribbon {
+  removeRibbonAction?: (id: string) => void;
+}
+
+function normalizeStep(s: Step): Step {
+  const step = { ...makeStep(s.type), ...s } as Step;
+  if (step.type === "llm") step.outputs = (Array.isArray(step.outputs) ? step.outputs : []).map((o: Partial<LLMOutput>) => ({ name: "", desc: "", choices: [], ...o }));
+  return step;
+}
+
+// Fills each step's missing keys, and those of a model step's outputs, with its type's defaults,
+// gives each action an icon, and drops steps of unknown types.
+function normalize(data: Partial<QuickActionsSettings> | null): QuickActionsSettings {
+  const actions: Action[] = (data?.actions ?? []).map((a) => ({
+    ...a,
+    icon: a.icon || DEFAULT_ACTION_ICON,
+    steps: (a.steps ?? []).filter((s: Step) => s && s.type in STEP_DEFS).map(normalizeStep),
+  }));
+  return { actions, models: data?.models ?? [] };
+}
 
 export default class QuickActionsPlugin extends Plugin {
   settings: QuickActionsSettings;
   private registeredCommandIds: string[] = [];
+  private ribbonButtons: { title: string; el: HTMLElement }[] = [];
 
   async onload() {
     await this.loadSettings();
     this.refreshCommands();
     this.addSettingTab(new QuickActionsSettingTab(this.app, this));
 
+    // One command, so one hotkey or phone toolbar button reaches every action.
+    this.addCommand({
+      id: "run-action",
+      name: "Run a quick action",
+      icon: DEFAULT_ACTION_ICON,
+      callback: () => new ActionPickerModal(this.app, this.settings.actions, (action) => this.run(action)).open(),
+    });
+
+    // obsidian://quick-actions?run=<id or name slug>&<value>=<text>. A value fills the Ask me,
+    // Choice or Pick a file step that produces that name, and that step does not ask.
     this.registerObsidianProtocolHandler("quick-actions", (params) => {
-      const actionSlug = params.run;
-      if (!actionSlug) {
+      const run = params.run;
+      if (!run) {
         // eslint-disable-next-line obsidianmd/ui/sentence-case -- plugin name
         new Notice("Quick Actions: missing 'run' parameter");
         return;
       }
-      const action = this.settings.actions.find(
-        (a) => toSlug(a.name) === actionSlug
-      );
+      const action = this.settings.actions.find((a) => a.id === run) ?? this.settings.actions.find((a) => toSlug(a.name) === run);
       if (!action) {
-        new Notice(`Quick Actions: unknown action "${actionSlug}"`);
+        new Notice(`Quick Actions: unknown action "${run}"`);
         return;
       }
-      executeAction(this.app, action, this.settings.models);
+      const preset: Record<string, string> = {};
+      for (const [key, value] of Object.entries(params)) if (!URI_KEYS.has(key) && typeof value === "string") preset[key] = value;
+      this.run(action, preset);
     });
   }
 
+  run(action: Action, preset?: Record<string, string>): void {
+    void executeAction(this.app, action, this.settings.models, { preset });
+  }
+
   async loadSettings() {
-    this.settings = { actions: [], models: [], ...((await this.loadData()) as Partial<QuickActionsSettings> | null) };
+    this.settings = normalize((await this.loadData()) as Partial<QuickActionsSettings> | null);
   }
 
   async saveSettings() {
@@ -40,21 +81,23 @@ export default class QuickActionsPlugin extends Plugin {
   }
 
   refreshCommands() {
-    // Remove old commands
-    for (const id of this.registeredCommandIds) {
-      this.removeCommand(id);
-    }
+    for (const id of this.registeredCommandIds) this.removeCommand(id);
     this.registeredCommandIds = [];
+    // The ribbon keeps an entry per button and re-attaches detached buttons on its next change, so
+    // each entry is removed the way Obsidian removes a plugin's buttons on unload, and the button
+    // is detached now rather than at that next change.
+    const ribbon = (this.app.workspace as unknown as { leftRibbon?: Ribbon }).leftRibbon;
+    for (const b of this.ribbonButtons) {
+      ribbon?.removeRibbonAction?.(`${this.manifest.id}:${b.title}`);
+      b.el.detach();
+    }
+    this.ribbonButtons = [];
 
-    // Register new commands
     for (const action of this.settings.actions) {
       const commandID = `action-${action.id}`;
-      this.addCommand({
-        id: commandID,
-        name: action.name,
-        callback: () => executeAction(this.app, action, this.settings.models),
-      });
+      this.addCommand({ id: commandID, name: action.name, icon: action.icon, callback: () => this.run(action) });
       this.registeredCommandIds.push(commandID);
+      if (action.ribbon) this.ribbonButtons.push({ title: action.name, el: this.addRibbonIcon(action.icon, action.name, () => this.run(action)) });
     }
   }
 }
