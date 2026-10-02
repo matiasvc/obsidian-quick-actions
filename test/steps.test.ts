@@ -8,12 +8,14 @@ import {
   freshOutputs,
   isModelMissing,
   makeStep,
+  outputHintOf,
   outputsOf,
   setOutputName,
   stepLabel,
   stepTitle,
   stepWith,
   templatedFields,
+  withoutUnavailable,
 } from "../src/steps";
 import { consumersOf, renameOutput } from "../src/variables";
 
@@ -67,6 +69,43 @@ test("outputsOf: a fetch hands down the page and its title, a structured model o
   assert.deepEqual(outputsOf(llm).map((o) => o.name), ["category", "heading"]);
   assert.deepEqual(outputsOf({ ...llm, outputs: [] }).map((o) => o.name), ["reply"]);
   assert.deepEqual(outputsOf(makeStep("open_file")), []);
+});
+
+test("a model step on the web hands down its sources after the reply, under a name of its own", () => {
+  const llm = makeStep("llm");
+  assert.deepEqual(outputsOf(llm).map((o) => o.name), ["reply"]);
+  const searching = stepWith("llm", { webSearch: true });
+  assert.deepEqual(outputsOf(searching).map((o) => o.name), ["reply", "sources"]);
+  const reading = stepWith("llm", { webFetch: true, outputs: [{ name: "title", desc: "", choices: [] }] });
+  assert.deepEqual(outputsOf(reading).map((o) => o.name), ["title", "sources"]);
+  setOutputName(reading, "sources", "links");
+  assert.deepEqual(outputsOf(reading).map((o) => o.name), ["title", "links"]);
+  assert.deepEqual(outputsOf(freshOutputs(stepWith("llm", { webSearch: true }), ["sources"])).map((o) => o.name), ["reply", "sources2"]);
+  assert.equal(outputHintOf(searching), "the reply, then its sources");
+  assert.equal(outputHintOf(reading), "one value per field, then its sources");
+  // Off the web, a name matching the unused sources key still renames the reply.
+  const offline = stepWith("llm", { variable: "sources" });
+  setOutputName(offline, "sources", "answer");
+  assert.deepEqual(outputsOf(offline).map((o) => o.name), ["answer"]);
+});
+
+test("the editor turns off Read linked pages for OpenAI and Effort for Haiku, and runs leave them out", () => {
+  const llm = makeStep("llm");
+  const openai: ModelConfig[] = [{ name: "GPT", provider: "openai", model: "m", secret_id: "" }];
+  const haiku: ModelConfig[] = [{ name: "Haiku", provider: "anthropic", model: "claude-haiku-4-5-20251001", secret_id: "" }];
+  const fetchField = STEP_DEFS.llm.fields.find((f) => f.key === "webFetch");
+  const effortField = STEP_DEFS.llm.fields.find((f) => f.key === "effort");
+  assert.equal(fetchField?.unavailable?.(llm, models), undefined);
+  assert.match(fetchField?.unavailable?.(llm, openai) ?? "", /OpenAI/);
+  assert.equal(effortField?.unavailable?.(llm, models), undefined);
+  assert.match(effortField?.unavailable?.(llm, haiku) ?? "", /Haiku/);
+  assert.equal(effortField?.unavailable?.(llm, openai), undefined);
+
+  const set = stepWith("llm", { effort: "high", webSearch: true, webFetch: true });
+  assert.equal(withoutUnavailable(set, models), set);
+  assert.deepEqual(withoutUnavailable(set, haiku), { ...set, effort: "" });
+  assert.deepEqual(withoutUnavailable(set, openai), { ...set, webFetch: false });
+  assert.equal((set as { effort: string }).effort, "high");
 });
 
 test("convertStep keeps same-named fields and the name, and uniquifies every output", () => {

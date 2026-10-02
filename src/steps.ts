@@ -5,6 +5,9 @@ import { uniqueName } from "./variables";
 
 export type StepGroup = "ask" | "generate" | "do";
 
+// How many searches or page reads a model step may make for one reply.
+export const WEB_MAX_USES = 5;
+
 // text: plain input. line/block/file: pill fields (variables allowed, and file is a
 // single line with a file-typed hint). folder: plain input with folder
 // suggestions. options: the reorderable option list. outputs: the fields of a
@@ -27,6 +30,7 @@ export interface FieldDef {
   resolve?: ResolveMode; // plain when omitted
   options?: { value: string; label: string }[];
   showIf?: (step: Step) => boolean;
+  unavailable?: (step: Step, models: ModelConfig[]) => string | undefined; // why the control is off
 }
 
 export interface StepDef {
@@ -87,7 +91,7 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     verb: "Pick a file",
     icon: "file",
     group: "ask",
-    description: "Choose a note from a folder",
+    description: "Choose a note or file from a folder",
     output: "file",
     defaultOutput: "file",
     outputHint: "the file you pick",
@@ -96,8 +100,18 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     fields: [
       { key: "label", label: "Question", kind: "text", desc: "Shown in the search box.", placeholder: "Which log?" },
       { key: "folder", label: "Folder", kind: "folder", desc: "Only files in this folder are offered. Empty means the whole vault.", placeholder: "Notes/" },
+      {
+        key: "files",
+        label: "Files",
+        kind: "dropdown",
+        options: [
+          { value: "notes", label: "Notes" },
+          { value: "media", label: "Images and PDFs" },
+          { value: "any", label: "Any file" },
+        ],
+      },
     ],
-    make: () => ({ type: "file_picker", variable: "file", label: "", folder: "" }),
+    make: () => ({ type: "file_picker", variable: "file", label: "", folder: "", files: "notes" }),
   },
   quick_task: {
     type: "quick_task",
@@ -135,11 +149,49 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     fromUri: false,
     fields: [
       { key: "model", label: "Model", kind: "model" },
+      {
+        key: "effort",
+        label: "Effort",
+        kind: "dropdown",
+        desc: "How much the model thinks before it answers. Low is faster and cheaper. High and Max are more thorough.",
+        options: [
+          { value: "", label: "Model default" },
+          { value: "low", label: "Low" },
+          { value: "medium", label: "Medium" },
+          { value: "high", label: "High" },
+          { value: "xhigh", label: "Extra high" },
+          { value: "max", label: "Max" },
+        ],
+        unavailable: (step, models) => {
+          const config = modelOf(step, models);
+          return config?.provider === "anthropic" && /haiku/i.test(config.model) ? "Haiku models have no effort setting." : undefined;
+        },
+      },
       { key: "system_prompt", label: "System prompt", kind: "block", placeholder: "How the model should behave." },
       { key: "user_prompt", label: "User prompt", kind: "block", placeholder: "What to send. Type {{ to insert a value." },
+      {
+        key: "attach",
+        label: "Attach",
+        kind: "file",
+        desc: "Images and PDFs sent with the prompt: a file from an earlier step or a path, several separated by commas. A note sends the images and PDFs it embeds.",
+        placeholder: "{{file}}",
+      },
+      {
+        key: "webSearch",
+        label: "Search the web",
+        kind: "toggle",
+        desc: `Up to ${WEB_MAX_USES} searches, about a cent each. The pages it draws on become their own value.`,
+      },
+      {
+        key: "webFetch",
+        label: "Read linked pages",
+        kind: "toggle",
+        desc: `Opens up to ${WEB_MAX_USES} URLs that appear in the user prompt. The pages become their own value.`,
+        unavailable: (step, models) => (modelOf(step, models)?.provider === "openai" ? "OpenAI models can't open a given URL. Their web search opens the pages it finds." : undefined),
+      },
       { key: "outputs", label: "Reply", kind: "outputs" },
     ],
-    make: () => ({ type: "llm", variable: "reply", system_prompt: "", user_prompt: "", model: "", outputs: [] }),
+    make: () => ({ type: "llm", variable: "reply", system_prompt: "", user_prompt: "", attach: "", model: "", effort: "", outputs: [], webSearch: false, webFetch: false, sourcesVariable: "sources" }),
   },
   fetch_page: {
     type: "fetch_page",
@@ -285,17 +337,49 @@ export interface StepOutput {
   type: OutputType;
 }
 
-// What a step hands down, in order. A structured model step hands down one value per field.
+// Whether a model step goes on the web, and so hands down its sources.
+export function usesWeb(step: LLMStep): boolean {
+  return step.webSearch || step.webFetch;
+}
+
+// The outputs that make up a model step's reply: one per field, or the whole reply as one.
+export function replyOutputs(step: LLMStep): StepOutput[] {
+  return step.outputs.length > 0 ? step.outputs.map((o) => ({ name: o.name, type: "text" })) : [{ name: step.variable, type: "text" }];
+}
+
+// What a step hands down, in order. A structured model step hands down one value per field, and a
+// model step on the web its sources after the reply.
 export function outputsOf(step: Step): StepOutput[] {
-  if (step.type === "llm" && step.outputs.length > 0) return step.outputs.map((o) => ({ name: o.name, type: "text" }));
+  if (step.type === "llm") return usesWeb(step) ? [...replyOutputs(step), { name: step.sourcesVariable, type: "text" }] : replyOutputs(step);
   if (step.type === "fetch_page") return [{ name: step.variable, type: "text" }, { name: step.titleVariable, type: "text" }];
   const def = STEP_DEFS[step.type];
   if (def.output === null || !("variable" in step)) return [];
   return [{ name: step.variable, type: def.output }];
 }
 
+// What the editor's Out band says a step hands down.
+export function outputHintOf(step: Step): string {
+  if (step.type !== "llm") return STEP_DEFS[step.type].outputHint;
+  return (step.outputs.length > 0 ? "one value per field" : STEP_DEFS.llm.outputHint) + (usesWeb(step) ? ", then its sources" : "");
+}
+
+// The step with each field whose control the editor turns off for its model reset to the type's
+// default, so a value set for another model is never sent.
+export function withoutUnavailable<T extends Step>(step: T, models: ModelConfig[]): T {
+  const off = STEP_DEFS[step.type].fields.filter((f) => f.unavailable?.(step, models) !== undefined);
+  if (off.length === 0) return step;
+  const defaults = makeStep(step.type) as unknown as Record<string, unknown>;
+  const copy = { ...step } as unknown as Record<string, unknown>;
+  for (const f of off) copy[f.key] = defaults[f.key];
+  return copy as unknown as T;
+}
+
 // Renames one of a step's outputs in place, without touching its consumers.
 export function setOutputName(step: Step, from: string, to: string): void {
+  if (step.type === "llm" && usesWeb(step) && step.sourcesVariable === from) {
+    step.sourcesVariable = to;
+    return;
+  }
   if (step.type === "llm" && step.outputs.length > 0) {
     for (const o of step.outputs) if (o.name === from) o.name = to;
     return;

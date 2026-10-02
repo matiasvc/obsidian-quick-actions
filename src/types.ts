@@ -13,11 +13,15 @@ export interface PromptStep extends StepBase {
   default: string; // templated: already in the box when it opens
 }
 
+// Which files Pick a file offers: notes, the images and PDFs a model can take, or every file.
+export type FileKind = "notes" | "media" | "any";
+
 export interface FilePickerStep extends StepBase {
   type: "file_picker";
   variable: string;
   label: string;
   folder: string;
+  files: FileKind;
 }
 
 export interface QuickTaskStep extends StepBase {
@@ -67,13 +71,21 @@ export interface LLMOutput {
   choices: string[];
 }
 
+// How much a model thinks before it answers, in both providers' words.
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+
 export interface LLMStep extends StepBase {
   type: "llm";
   variable: string; // the whole reply, when `outputs` is empty
   system_prompt: string;
   user_prompt: string;
+  attach: string; // templated: images and PDFs, or notes whose embedded ones are sent, separated by commas
   model: string;
+  effort: Effort | ""; // "" leaves it to the model
   outputs: LLMOutput[];
+  webSearch: boolean;
+  webFetch: boolean; // Anthropic only: open URLs that appear in the prompt
+  sourcesVariable: string; // the pages the reply drew on, handed down when either web option is on
 }
 
 export interface FetchPageStep extends StepBase {
@@ -103,6 +115,13 @@ export interface ModelConfig {
   provider: "openai" | "anthropic";
   model: string;
   secret_id: string;
+  max_tokens?: number; // the most a reply may use, thinking included. Unset means DEFAULT_MAX_TOKENS for Anthropic and no limit for OpenAI
+}
+
+// A web page a model reply drew on.
+export interface Page {
+  url: string;
+  title?: string;
 }
 
 export interface QuickActionsSettings {

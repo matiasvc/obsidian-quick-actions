@@ -1,4 +1,6 @@
-// Pure text helpers: the value filters, file name cleaning, YAML escaping and URL finding.
+// Pure text helpers: the value filters, file name cleaning, YAML escaping, URL finding and model
+// source lists.
+import { Page } from "./types";
 
 export interface FilterDef {
   id: string;
@@ -54,14 +56,15 @@ export function safeFileName(text: string): string {
 }
 
 // The note a resolved path names, read the way Obsidian's normalizePath reads paths: slashes
-// collapsed and trimmed, non-breaking spaces as spaces, and ".md" added when missing.
-export function notePath(path: string): string {
+// collapsed and trimmed, non-breaking spaces as spaces, and ".md" added when missing. A path that
+// `exists` says names a file already, such as a picked image or PDF, keeps its own extension.
+export function notePath(path: string, exists?: (path: string) => boolean): string {
   const p = path
     .replace(/[\\/]+/g, "/")
     .replace(/^\/|\/$/g, "")
     .replace(/\p{Zs}/gu, " ")
     .normalize("NFC");
-  return p.endsWith(".md") ? p : p + ".md";
+  return p.endsWith(".md") || exists?.(p) ? p : p + ".md";
 }
 
 // The fallback link when there is no app to ask: the full path, shown as the file's name.
@@ -128,4 +131,36 @@ export function findUrl(text: string): string | null {
     url = url.slice(0, -1);
   }
   return url;
+}
+
+// Pages as a Markdown list of links, each page once. OpenAI tags its links with
+// utm_source=openai, which is dropped. Parentheses and spaces in a URL are escaped so the link
+// holds together, and brackets in a title are dropped.
+export function sourceList(pages: Page[]): string {
+  const titles = new Map<string, string>();
+  for (const p of pages) {
+    const url = p.url
+      .replace(/([?&])utm_source=openai(?:&|$)/, "$1")
+      .replace(/[?&]$/, "")
+      .replace(/\s/g, encodeURIComponent)
+      .replace(/\(/g, "%28")
+      .replace(/\)/g, "%29");
+    const title = (p.title ?? "").replace(/[[\]]/g, "").trim();
+    if (!titles.get(url)) titles.set(url, title);
+  }
+  return [...titles].map(([url, title]) => (title ? `- [${title}](${url})` : `- ${url}`)).join("\n");
+}
+
+// Text without the citation links OpenAI writes into it at each mark's offsets, and the space
+// before each. The offsets count code points, so an emoji counts as one. A range is only cut when
+// it holds a link, in case the offsets are off.
+export function stripCitations(text: string, marks: { start_index?: number; end_index?: number }[]): string {
+  const ranges = marks.filter((m) => m.start_index !== undefined && m.end_index !== undefined) as { start_index: number; end_index: number }[];
+  let chars = Array.from(text);
+  for (const m of ranges.sort((a, b) => b.start_index - a.start_index)) {
+    if (!chars.slice(m.start_index, m.end_index).join("").includes("](")) continue;
+    const start = chars[m.start_index - 1] === " " ? m.start_index - 1 : m.start_index;
+    chars = [...chars.slice(0, start), ...chars.slice(m.end_index)];
+  }
+  return chars.join("");
 }

@@ -155,6 +155,8 @@ export interface ResolveOptions {
   link?: (path: string) => string;
   // Whether a value is cleaned for file names in a path field. Nothing is cleaned without it.
   clean?: (name: string) => boolean;
+  // Whether a vault file has this path, so a path naming an image or PDF gets no ".md".
+  exists?: (path: string) => boolean;
 }
 
 // How each substituted value is finished for the kind of field it lands in. A path cleans the
@@ -185,13 +187,13 @@ function substitute(ref: VarRef, vars: Record<string, string>, opts: ResolveOpti
 }
 
 // Unknown names are left verbatim so a typo is visible in the result. A path also comes back as
-// the note it names, normalized and with ".md".
+// the file it names, normalized and with ".md" unless it names another file that exists.
 export function resolveTemplate(template: string, vars: Record<string, string>, opts: ResolveOptions = {}, mode: ResolveMode = "plain"): string {
   const finish = finisher(template, mode, opts);
   const text = template.replace(VAR_RE, (match: string, name: string, chain: string, index: number) =>
     name in vars ? substitute({ name, filters: splitChain(chain), index, length: match.length }, vars, opts, finish) : match,
   );
-  return mode === "path" ? notePath(text) : text;
+  return mode === "path" ? notePath(text, opts.exists) : text;
 }
 
 // Same substitution as resolveTemplate, split into segments so a renderer can mark each
