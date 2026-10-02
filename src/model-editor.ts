@@ -1,6 +1,6 @@
 import { AbstractInputSuggest, App, Modal, Notice, SecretComponent, Setting, setIcon } from "obsidian";
 import { ModelConfig } from "./types";
-import { PROVIDERS, ProviderModel, listModels, testModel } from "./llm";
+import { DEFAULT_MAX_TOKENS, PROVIDERS, ProviderModel, listModels, testModel } from "./llm";
 import { formatSeconds } from "./ui";
 
 declare const window: Window & { moment: typeof import("moment") };
@@ -82,11 +82,15 @@ export class ModelEditModal extends Modal {
       .addText((t) => t.setValue(this.draft.name).onChange((v) => (this.draft.name = v)));
 
     let suggest: ModelIdSuggest | null = null;
+    let limitInput: HTMLInputElement | null = null;
+    // What an empty Output limit means for the provider.
+    const noLimit = () => (this.draft.provider === "openai" ? "No limit" : String(DEFAULT_MAX_TOKENS));
     new Setting(contentEl).setName("Provider").addDropdown((d) => {
       for (const p of PROVIDERS) d.addOption(p.value, p.label);
       d.setValue(this.draft.provider).onChange((v) => {
         this.draft.provider = v === "openai" ? "openai" : "anthropic";
         suggest?.reset();
+        if (limitInput) limitInput.placeholder = noLimit();
       });
     });
 
@@ -120,6 +124,22 @@ export class ModelEditModal extends Modal {
           suggest?.reset();
         }),
       );
+
+    new Setting(contentEl)
+      .setName("Output limit")
+      .setDesc("The most tokens a reply may use, thinking included. A reply that reaches it stops the step. Raise it if long drafts or high effort get cut off.")
+      .addText((t) => {
+        limitInput = t.inputEl;
+        t.inputEl.type = "number";
+        t.inputEl.min = "1";
+        t.setPlaceholder(noLimit())
+          .setValue(this.draft.max_tokens ? String(this.draft.max_tokens) : "")
+          .onChange((v) => {
+            // Undefined rather than deleted, so saving over the stored model clears it too.
+            const n = Number.parseInt(v, 10);
+            this.draft.max_tokens = n > 0 ? n : undefined;
+          });
+      });
 
     const connection = new Setting(contentEl).setName("Connection").setDesc("");
     const status = connection.descEl;
