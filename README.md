@@ -8,7 +8,7 @@ Configurable quick actions for common vault operations. Build custom commands fr
 - **Visible data flow.** Every step shows what it can use from the steps above it and what it hands down. Variables are pills, not text you have to remember, and filters shape them on the way in.
 - **Test runs.** Run an action up to any step with real prompts and models, see every captured value and where an insert would land, and write nothing.
 - **Safe runs.** One notice shows progress and can cancel. A failed step offers Retry with everything already typed or generated, and a finished run offers Undo.
-- **LLM integration.** Call Anthropic or OpenAI models as steps, keep the reply as one value or as several fields from one call.
+- **LLM integration.** Call Anthropic or OpenAI models as steps, with attached images and PDFs and the provider's web search. Keep the reply as one value or as several fields from one call.
 - **Web pages.** Fetch a page as Markdown so a model reads the page itself, not just its URL.
 - **File creation and editing.** Create new files or insert text under a heading in an existing file.
 - **Interactive inputs.** Ask for text, pick a file from a folder, present a list of options, or type a task into the Quick Tasks box. Start from the text you selected or copied.
@@ -23,10 +23,10 @@ Steps are grouped by what they do. Steps that produce a value name their output,
 |---|---|---|---|
 | Ask | **Ask me** | A question with a text box (single or multi-line). **Default** fills the box when it opens, for example with `{{selection}}` | text |
 | Ask | **Choice** | Pick one option from a list | text |
-| Ask | **Pick a file** | Choose a note from a folder. **Question** is shown in the search box, files you picked recently come first, and each row shows its folder and last edit | file |
+| Ask | **Pick a file** | Choose a note, an image or PDF, or any file from a folder. **Question** is shown in the search box, files you picked recently come first, and each row shows its folder and last edit | file |
 | Ask | **Quick task** | Type a task into the [Quick Tasks](https://github.com/matiasvc/obsidian-quick-tasks) quick-add box (dates, `!priority`, `#tags`, `@project`, repeat phrases) and create its note. Optional project link and prefilled text. Requires Quick Tasks | file |
 | Fetch and generate | **Fetch page** | Download the page at a URL, or the first URL in a value, as Markdown with its title. Text without a URL passes through, or stops the action if you choose | text (page and its title) |
-| Fetch and generate | **Ask a model** | Send a system and user prompt to a configured model. **Reply** is one value, or several named fields the model fills in one call | text (one or more) |
+| Fetch and generate | **Ask a model** | Send a system and user prompt to a configured model, with images and PDFs attached, and let it search the web or read linked pages. **Reply** is one value, or several named fields the model fills in one call | text (one or more, and the sources when on the web) |
 | Do | **Create file** | Write a new note from a templated path and content. Missing folders are created | file |
 | Do | **Insert in section** | Add text under a heading in a note, at the start or end of the section | nothing |
 | Do | **Open file** | Open a note in the current tab, a new tab or a split, optionally with the cursor under a heading | nothing |
@@ -35,7 +35,11 @@ A `file` output is a vault path. **Insert in section** and **Open file** take a 
 
 **Quick task** produces the new task note, and `Open file` with target `{{task}}` opens it. Its **Project** field (a note from an earlier step, or a path) is the note Quick Tasks embeds the task in, under that note's `# Tasks` heading, so no `Insert in section` step is needed for it. `Insert in section` with the text `![[{{task}}]]` still embeds the task in any other note as Quick Tasks' live widget. **Prefill** is typed into the box before you start. Without the Quick Tasks plugin the step fails with a notice and the editor shows a warning on the step. A test run opens the box and reports what it would create without writing the note.
 
-**Ask a model** with several values lists each field with a name, a description the model reads, and optional choices. A field with choices can only be one of them, so a classifier can't invent a category. Anthropic models answer through forced tool use and OpenAI models through JSON schema output.
+**Ask a model** with several values lists each field with a name, a description the model reads, and optional choices. A field with choices can only be one of them, so a classifier can't invent a category. Both providers answer through their JSON schema output. A reply that was refused, or cut off at the output limit or the model's context window, fails the step instead of passing on a partial answer.
+
+**Search the web** lets the model run up to 5 searches through the provider's own web search (about a cent each, on both Anthropic and OpenAI). **Read linked pages** lets an Anthropic model open up to 5 URLs that appear in the user prompt. OpenAI has no tool for that, so the option is off for OpenAI models, whose web search opens the pages it finds, and picking an OpenAI model turns it off. With either on, the reply is the model's answer without its lead-in ("I'll search for…"), and the step also hands down `{{sources}}`, a Markdown list of links to the pages the answer cites and the pages it read. When the reply cites nothing, as with several values, `{{sources}}` lists the pages its searches found instead. Rename the value in the Out band like any other. A step on the web can take several seconds, and the run notice says it is searching or reading pages.
+
+**Attach** sends images (PNG, JPEG, GIF, WebP) and PDFs from the vault with the prompt: a file from an earlier step such as `{{file}}`, or a path, several separated by commas. A note sends the images and PDFs it embeds, so `{{active_note}}` sends the screenshots pasted into the note you are in. Files go inline with the request, which works on the phone too. Before anything is read, the total is checked against what the provider takes in one request (32 MB for Anthropic, 50 MB for OpenAI). A missing file, a file of another kind or too much data fails the step with the file names. A test run lists what was attached. **Pick a file** with **Files** set to Images and PDFs offers exactly the files a model can take. An image costs roughly 1,000 to 5,000 tokens and a PDF page 1,500 to 3,000.
 
 **Insert in section** writes through the note's editor when the note is open for editing, so the entry lands next to anything you have typed and not saved yet. Otherwise it changes the file in one step with `vault.process`.
 
@@ -104,12 +108,16 @@ The editor is a two-pane modal: the steps on the left, the selected step on the 
 
 Several models can be configured (a fast one for classification, a capable one for drafting) and each **Ask a model** step picks one. A step with no model set uses the first one. Model names are unique. Renaming a model updates the steps that use it. A step whose model was deleted is marked red in the editor and stops the action instead of running on another model.
 
+**Output limit** is the most tokens a reply may use, thinking included. Empty means 16,000 for Anthropic, which requires a limit, and no limit for OpenAI. A reply that reaches it fails the step, so raise it if long drafts get cut off.
+
+Each **Ask a model** step has an **Effort**: Model default, Low, Medium, High, Extra high or Max. Low is faster and cheaper, which suits classification, and High or Max suits drafting. Since it is per step, one model can do both. Haiku models have no effort setting, so the editor turns it off for them, and picking a Haiku model resets it. A model that rejects a value, such as an OpenAI model without reasoning, fails the step with the provider's message.
+
 ### Supported providers
 
 | Provider | API | Auth header |
 |---|---|---|
 | **Anthropic** | Messages API (`/v1/messages`), model list (`/v1/models`) | `x-api-key` |
-| **OpenAI** | Chat Completions API (`/v1/chat/completions`), model list (`/v1/models`) | `Authorization: Bearer` |
+| **OpenAI** | Responses API (`/v1/responses`, with `store: false` so OpenAI doesn't keep the response for later retrieval), model list (`/v1/models`) | `Authorization: Bearer` |
 
 ## Starters
 
