@@ -15,7 +15,7 @@ export interface PillFieldOptions {
   multiline?: boolean;
   mono?: boolean;
   placeholder?: string;
-  resolve: (name: string) => { type: OutputType } | null; // null = nothing produces it
+  resolve: (name: string) => { type: OutputType; maybe?: boolean } | null; // null = nothing produces it, maybe = an If block may leave it unset
   onFocus?: () => void;
   toolsParent?: HTMLElement; // mobile puts the { } button here, in the field's label row
 }
@@ -67,10 +67,10 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
 
   const pillEl = (name: string, filters: string[] = []): HTMLElement => {
     const known = opts.resolve(name);
-    const pill = renderPill(editorEl, name, known?.type ?? null, { inline: true, unknown: !known });
+    const pill = renderPill(editorEl, name, known?.type ?? null, { inline: true, unknown: !known, cls: known?.maybe ? "is-maybe" : undefined });
     pill.setAttr("contenteditable", "false");
     pill.setAttr("data-pill", name);
-    pill.setAttr("aria-label", "Click to add a filter, like slug or trim");
+    pill.setAttr("aria-label", known?.maybe ? "It can be empty after its If block. Click to add a filter." : "Click to add a filter, like slug or trim");
     setFilters(pill, filters);
     pill.remove();
     return pill;

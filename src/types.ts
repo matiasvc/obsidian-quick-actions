@@ -93,10 +93,67 @@ export interface FetchPageStep extends StepBase {
   variable: string; // the page as Markdown
   titleVariable: string;
   url: string; // templated: a URL, or text with one in it
-  noUrl: "text" | "fail";
+  noUrl: "text" | "fail"; // when there is no page: no URL in the value, or the fetch failed
 }
 
-export type Step = PromptStep | FilePickerStep | QuickTaskStep | InsertInSectionStep | CreateFileStep | ChoiceStep | OpenFileStep | LLMStep | FetchPageStep;
+// How a branch tests a value. Every op but filled and empty compares it with `text`.
+export type TestOp = "filled" | "empty" | "is" | "is_not" | "contains" | "not_contains" | "matches";
+
+export interface BranchTest {
+  value: string; // templated
+  op: TestOp;
+  text: string; // templated
+}
+
+// An If block lies flat in the step list: an if, any else_ifs, an optional else, then an end_if.
+// The steps between two of them make up a branch.
+export interface IfStep extends StepBase {
+  type: "if";
+  match: "all" | "any";
+  tests: BranchTest[];
+}
+
+export interface ElseIfStep extends StepBase {
+  type: "else_if";
+  match: "all" | "any";
+  tests: BranchTest[];
+}
+
+export interface ElseStep extends StepBase {
+  type: "else";
+}
+
+export interface EndIfStep extends StepBase {
+  type: "end_if";
+}
+
+export interface SetValueStep extends StepBase {
+  type: "set_value";
+  variable: string;
+  value: string; // templated
+}
+
+export interface StopStep extends StepBase {
+  type: "stop";
+  message: string; // templated: shown when the action stops here
+}
+
+export type Step =
+  | PromptStep
+  | FilePickerStep
+  | QuickTaskStep
+  | InsertInSectionStep
+  | CreateFileStep
+  | ChoiceStep
+  | OpenFileStep
+  | LLMStep
+  | FetchPageStep
+  | IfStep
+  | ElseIfStep
+  | ElseStep
+  | EndIfStep
+  | SetValueStep
+  | StopStep;
 
 export type StepType = Step["type"];
 

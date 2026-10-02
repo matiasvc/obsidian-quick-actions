@@ -4,7 +4,7 @@ Configurable quick actions for common vault operations. Build custom commands fr
 
 ## Features
 
-- **Composable step pipelines.** Chain steps into a single command.
+- **Composable step pipelines.** Chain steps into a single command, with If blocks that run one of several branches.
 - **Visible data flow.** Every step shows what it can use from the steps above it and what it hands down. Variables are pills, not text you have to remember, and filters shape them on the way in.
 - **Test runs.** Run an action up to any step with real prompts and models, see every captured value and where an insert would land, and write nothing.
 - **Safe runs.** One notice shows progress and can cancel. A failed step offers Retry with everything already typed or generated, and a finished run offers Undo.
@@ -25,11 +25,14 @@ Steps are grouped by what they do. Steps that produce a value name their output,
 | Ask | **Choice** | Pick one option from a list | text |
 | Ask | **Pick a file** | Choose a note, an image or PDF, or any file from a folder. **Question** is shown in the search box, files you picked recently come first, and each row shows its folder and last edit | file |
 | Ask | **Quick task** | Type a task into the [Quick Tasks](https://github.com/matiasvc/obsidian-quick-tasks) quick-add box (dates, `!priority`, `#tags`, `@project`, repeat phrases) and create its note. Optional project link and prefilled text. Requires Quick Tasks | file |
-| Fetch and generate | **Fetch page** | Download the page at a URL, or the first URL in a value, as Markdown with its title. Text without a URL passes through, or stops the action if you choose | text (page and its title) |
+| Fetch and generate | **Fetch page** | Download the page at a URL, or the first URL in a value, as Markdown with its title. **When there is no page**, because the value has no URL or the fetch failed, the text passes through as the page with an empty title, or the action stops if you choose | text (page and its title) |
 | Fetch and generate | **Ask a model** | Send a system and user prompt to a configured model, with images and PDFs attached, and let it search the web or read linked pages. **Reply** is one value, or several named fields the model fills in one call | text (one or more, and the sources when on the web) |
 | Do | **Create file** | Write a new note from a templated path and content. Missing folders are created | file |
 | Do | **Insert in section** | Add text under a heading in a note, at the start or end of the section | nothing |
 | Do | **Open file** | Open a note in the current tab, a new tab or a split, optionally with the cursor under a heading | nothing |
+| Flow | **If** | Run one of several branches of steps, picked by tests. See [If blocks](#if-blocks) | what its branches set |
+| Flow | **Set a value** | Turn a template into a named value. The last step that sets a name wins | text |
+| Flow | **Stop** | End the action here, as finished, with an optional message | nothing |
 
 A `file` output is a vault path. **Insert in section** and **Open file** take a file as their target, so a `Create file` step followed by `Open file` with target `{{note}}` opens the note that was just created.
 
@@ -42,6 +45,17 @@ A `file` output is a vault path. **Insert in section** and **Open file** take a 
 **Attach** sends images (PNG, JPEG, GIF, WebP) and PDFs from the vault with the prompt: a file from an earlier step such as `{{file}}`, or a path, several separated by commas. A note sends the images and PDFs it embeds, so `{{active_note}}` sends the screenshots pasted into the note you are in. Files go inline with the request, which works on the phone too. Before anything is read, the total is checked against what the provider takes in one request (32 MB for Anthropic, 50 MB for OpenAI). A missing file, a file of another kind or too much data fails the step with the file names. A test run lists what was attached. **Pick a file** with **Files** set to Images and PDFs offers exactly the files a model can take. An image costs roughly 1,000 to 5,000 tokens and a PDF page 1,500 to 3,000.
 
 **Insert in section** writes through the note's editor when the note is open for editing, so the entry lands next to anything you have typed and not saved yet. Otherwise it changes the file in one step with `vault.process`.
+
+### If blocks
+
+An **If** block holds steps in branches. Its first branch runs when its tests pass. Any **Else if** branches are tried in order after it, and an **Else** runs when no branch above it does. At most one branch runs, and the run goes on after the block.
+
+- **Tests.** Each branch tests one or more values: has text, is empty, is, is not, contains, does not contain, or matches a pattern (a regular expression). Comparisons ignore case and the spaces around a value. With several tests, the branch runs when all of them pass or when any does.
+- **The step list.** The block is a framed box: the If is its header, each Else if and Else a divider, and the bottom edge closes it. Drag steps into and out of its branches. A step's ⋯ menu also has **Put in an If**, **Move into** each branch, and **Move out of the If block**, which is how steps move on a phone. Dragging the If moves the whole block, and blocks can sit inside branches of other blocks.
+- **The If's own settings.** Selecting the If shows one row per branch with its tests, and buttons for a new Else if or Else. Removing a branch moves its steps below the block. **Remove If, keep its steps** in the ⋯ menu takes the block away and leaves its steps, and **Delete** removes the block with its steps.
+- **Values.** A step in a branch sees the values from before the block and from its own branch, not from the branches beside it. After the block, a value any branch set is there. Its pill is dashed when not every branch sets it or there is no Else, since it can then be empty. Renaming a value a block sets in several branches renames it in all of them.
+- **Runs.** A test run notes which branch ran and marks the steps of the others as not taken. Outputs of a branch that did not run are empty, so later steps never see a bare `{{name}}`.
+- **Numbers.** Steps are numbered in order, counting the If but not its dividers or end.
 
 ## Variables
 
@@ -59,7 +73,7 @@ Every templated field (paths, content, prompts, targets, sections) accepts `{{na
 | `{{active_note}}` | The path of the note you were in (a file) |
 | `{{active_title}}` | That note's name |
 
-**Step outputs.** Each producing step names its outputs in the **Out** band. Click a name to rename it, and every later use is rewritten. Names must be a single word (letters, digits, underscores) that nothing else produces.
+**Step outputs.** Each producing step names its outputs in the **Out** band. Click a name to rename it, and every later use is rewritten. Names must be a single word (letters, digits, underscores). Two steps may share one only when one is a Set a value or they sit in different branches of an If.
 
 **Filters** change a value where it is used: `{{category|slug}}`. Click a pill in a field to add or remove them, or on mobile use the `{ }` menu with the cursor after a value. They apply in order, so `{{reply|first_line|trim}}` works.
 
@@ -73,7 +87,7 @@ Every templated field (paths, content, prompts, targets, sections) accepts `{{na
 | `yaml` | Escaped for a double-quoted frontmatter value | `The "what" effect` → `The \"what\" effect` |
 | `link` | A file as a link, in the vault's link format | `Reference Notes/ENet.md` → `[[ENet]]` |
 
-Two kinds of cleaning happen without a filter. In a path (the **Create file** path, and the file and template fields of **Insert in section** and **Open file**), values typed into Ask me, generated by a model or fetched from a page, and the selection, clipboard, note title and time, are made safe for a file name. So a colon or slash in a generated title can't fail the step or add a folder, and `{{time}}` becomes `13.52`. Values from Choice and Pick a file keep their slashes, and the path is normalized, so a stray `//` does no harm. In the frontmatter block of a **Create file** content, each value is escaped for the quotes around it, so a title with a double quote still gives valid YAML. Model replies are trimmed.
+Two kinds of cleaning happen without a filter. In a path (the **Create file** path, and the file and template fields of **Insert in section** and **Open file**), values typed into Ask me, generated by a model, fetched from a page or set by Set a value, and the selection, clipboard, note title and time, are made safe for a file name. A value some step produces as a file is never cleaned, and neither is a Set a value whose value is just such a file. So a colon or slash in a generated title can't fail the step or add a folder, and `{{time}}` becomes `13.52`. Values from Choice and Pick a file keep their slashes, and the path is normalized, so a stray `//` does no harm. In the frontmatter block of a **Create file** content, each value is escaped for the quotes around it, so a title with a double quote still gives valid YAML. Model replies are trimmed.
 
 ## The action editor
 
@@ -84,7 +98,7 @@ The editor is a two-pane modal: the steps on the left, the selected step on the 
 - **In band.** Every value this step could use. Tinted pills are used by this step, outlined ones are available, blue ones are files.
 - **Fields.** What the step needs. Templated fields hold pills. A multi-line field longer than six lines shows its first four until you click into it or on **Show all**.
 - **Out band.** What this step produces, and which later steps use it.
-- **Add step.** A grouped picker (Ask, Fetch and generate, Do). Steps reorder by drag or from the `⋯` menu.
+- **Add step.** A grouped picker (Ask, Fetch and generate, Do, Flow). The new step goes just after the selected one, or at the start of the first branch when an If is selected. Steps reorder by drag or from the `⋯` menu.
 - **Test run** / **Run to here.** Runs the steps up to the selected one. Prompts, page fetches and models are real, nothing is written to the vault. The rail shows each captured value, and the **Last run** view of a step shows the prompt that was sent with every substituted value marked, what it produced, the lines around where an insert would land, and what the next step would create. **Run step N too** continues the same run without asking again. **Discard run** returns to editing.
 - **Save** (or Cmd/Ctrl-Enter) writes the action. **Cancel**, Esc and the close button ask before throwing away changes, and a second Esc discards.
 
@@ -152,6 +166,63 @@ An empty settings page offers three starters that open a prefilled editor: **Cap
 | 3 | Ask a model | User prompt `{{page}}`, several values: `category` (choices Article, Paper, Video), `title`, `body` |
 | 4 | Create file | Path `Reference Notes/{{timestamp}} - {{category}} - {{title}}`, tag `{{category|slug}}`, body `{{body}}` |
 
+## TODO
+
+Planned features, by area.
+
+### Getting more from a link
+
+- **Richer page details.** Fetch page also hands down the address after redirects (so short links expand), the canonical URL, the author, site, published date, description and lead image.
+
+### Reading the vault
+
+- **Read a note.** A step that hands down a note's body, each frontmatter field as its own value, and the last line under a heading.
+- **Remember the last answer.** Ask me can default to what you typed the last time that step ran, so a repeated entry takes one tap.
+- **Choices from the vault.** Choice takes its options from the vault: a property's existing values, tags, a note's headings or a note's lines, with typing a new value allowed.
+- **Resurface a note.** An input that picks a note by a rule: random, on this day, least recently touched, or spaced. A variant brings a fleeting note back at growing intervals with Promote, Merge and Let go.
+- **The page you are reading.** `{{web_url}}` and `{{web_title}}` from the open Web viewer tab, on desktop.
+- **Link to the cursor.** Adds a block ID at the cursor, or takes the heading above it, and hands down a link to that exact spot.
+
+### Writing to the vault
+
+- **Set property.** Set, add to or remove a frontmatter property through Obsidian's frontmatter writer, so quoting stays consistent.
+- **Move or rename a note.** Moves a note with its links updated and hands down the new path.
+- **Write at the cursor.** Insert at the cursor, replace the selection, or tick the checklist line the cursor is on. Insert in section also gains before or after a matching line, and the top or bottom of the file.
+- **Extract to a new note.** Moves the selection into a new note, leaves a link or embed behind, and records the source in the new note's frontmatter.
+- **Tasks without the box.** Creates a Quick Tasks note directly from a title, body, note and heading, and can complete a task. Needs additions to the Quick Tasks API.
+
+### Asking you
+
+- **Form.** Several fields on one screen: text, number, toggle, date, time, slider, choice and multi-select, or one fill-in sentence.
+- **Dates you can type.** A date field that understands "next friday", and a filter that formats or shifts any date, such as `{{date|add:7d}}`.
+- **Follow-up questions.** A model asks one to three questions, only when the capture would not make sense later. An interview mode keeps asking until the step's outputs are filled.
+- **Review before writing.** An editable box with Accept, Edit and Reject before later steps use a value.
+- **Jot loop.** Asks again after each entry, timestamps each one, stops on an empty entry, and hands down the list.
+- **Typed capture.** A note type defined once with its fields and hints. A model fills what it can from free text and asks only for required fields that are still missing.
+
+### Phone
+
+- **Voice memo.** Records audio, keeps it as an attachment, transcribes it with an OpenAI key, and can apply a rewrite style.
+- **Photo.** Takes a photo or picks one from the gallery, saves it, hands down its time and place, and can pass it to Attach.
+- **Place and weather.** `{{place}}` as a named place rather than coordinates, and `{{weather}}` from Open-Meteo, which needs no key.
+- **Share sheet.** Actions appear in the menu Obsidian shows when text or a link is shared to it, and the shared text becomes `{{shared}}`. This relies on an undocumented hook.
+
+### Outside the vault
+
+- **HTTP request.** Method, URL, headers with a Keychain secret and a JSON body, handing down fields picked from the response.
+
+### Flow
+
+- **For each.** Split a value into items, optionally with a model, run the following steps once per item, and collect the results.
+- **Run another action.** Call an action and pass it values, so shared parts are built once.
+- **More filters.** `replace`, `split`, `join`, `title`, `wikilink`, `list`, `calc`, `default`, a regex match, and `expand_url`. Filters that take arguments change the `{{name|filter}}` syntax and the pill editor.
+- **Shared values.** Values defined once in settings that every action can use.
+- **Models that search the vault.** Ask a model gets a vault search tool so it can look notes up while it answers. This is a tool loop the plugin runs, separate from web search.
+
+### Editor
+
+- **Pinned test outputs.** Pin a step's test-run output, so editing later steps doesn't call the model or fetch the page again.
+
 ## Development
 
 ```bash
@@ -159,7 +230,7 @@ npm install
 npm run build   # bundle to main.js
 npm run deploy  # build, copy into $OBSIDIAN_VAULT (default ~/Obsidian) and reload the plugin
 npm run lint    # eslint with the obsidianmd rules
-npm test        # unit tests for the pure modules (variables, filters, inserts, step table)
+npm test        # unit tests for the pure modules
 ```
 
 ## Installation

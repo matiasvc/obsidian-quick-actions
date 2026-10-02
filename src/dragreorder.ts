@@ -3,6 +3,7 @@ import { Platform } from "obsidian";
 export interface DragReorderOptions {
   itemSelector: string;
   handleSelector?: string; // press must start here, or anywhere on the item when omitted
+  canDrag?: (item: HTMLElement) => boolean; // items it refuses stay put, but take drops beside them
   onReorder: (from: number, to: number) => void; // `to` is the item's final index
 }
 
@@ -35,7 +36,7 @@ export function enableDragReorder(container: HTMLElement, opts: DragReorderOptio
     // Text inputs and buttons inside a row keep their own mouse behaviour.
     if (!opts.handleSelector && target.closest("input, textarea, button, select, [contenteditable=true], [contenteditable=plaintext-only]")) return;
     const item = itemOf(target);
-    if (!item || !container.contains(item)) return;
+    if (!item || !container.contains(item) || (opts.canDrag && !opts.canDrag(item))) return;
     armed = item;
     item.draggable = true;
   };

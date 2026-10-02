@@ -1,6 +1,7 @@
 import { Notice, Plugin } from "obsidian";
-import { Action, DEFAULT_ACTION_ICON, LLMOutput, QuickActionsSettings, Step, toSlug } from "./types";
-import { STEP_DEFS, makeStep } from "./steps";
+import { Action, BranchTest, DEFAULT_ACTION_ICON, LLMOutput, QuickActionsSettings, Step, toSlug } from "./types";
+import { STEP_DEFS, makeStep, newTest } from "./steps";
+import { repairBlocks } from "./flow";
 import { executeAction } from "./executor";
 import { ActionPickerModal } from "./modals";
 import { QuickActionsSettingTab } from "./settings";
@@ -15,16 +16,17 @@ interface Ribbon {
 function normalizeStep(s: Step): Step {
   const step = { ...makeStep(s.type), ...s } as Step;
   if (step.type === "llm") step.outputs = (Array.isArray(step.outputs) ? step.outputs : []).map((o: Partial<LLMOutput>) => ({ name: "", desc: "", choices: [], ...o }));
+  if (step.type === "if" || step.type === "else_if") step.tests = (Array.isArray(step.tests) ? step.tests : []).map((t: Partial<BranchTest>) => ({ ...newTest(), ...t }));
   return step;
 }
 
-// Fills each step's missing keys, and those of a model step's outputs, with its type's defaults,
-// gives each action an icon, and drops steps of unknown types.
+// Fills the missing keys of each step, of a model step's outputs and of a branch's tests with their
+// defaults, gives each action an icon, drops steps of unknown types, and makes every If block whole.
 function normalize(data: Partial<QuickActionsSettings> | null): QuickActionsSettings {
   const actions: Action[] = (data?.actions ?? []).map((a) => ({
     ...a,
     icon: a.icon || DEFAULT_ACTION_ICON,
-    steps: (a.steps ?? []).filter((s: Step) => s && s.type in STEP_DEFS).map(normalizeStep),
+    steps: repairBlocks((a.steps ?? []).filter((s: Step) => s && s.type in STEP_DEFS).map(normalizeStep)),
   }));
   return { actions, models: data?.models ?? [] };
 }

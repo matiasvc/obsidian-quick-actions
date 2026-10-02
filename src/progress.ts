@@ -4,7 +4,7 @@ import { STEP_DEFS, modelOf, replyOutputs, withoutUnavailable } from "./steps";
 import { noticeLink } from "./ui";
 
 export interface StepEvent {
-  index: number;
+  number: number; // as the editor numbers it, which skips an If block's other markers
   step: Step;
 }
 
@@ -44,10 +44,10 @@ export class RunProgress {
       this.hide();
       return;
     }
-    this.text = `Step ${event.index + 1} of ${this.total} · ${activity}`;
+    this.text = `Step ${event.number} of ${this.total} · ${activity}`;
     this.started = Date.now();
     this.ensure();
-    this.bar?.setValue(Math.round((event.index / this.total) * 100));
+    this.bar?.setValue(Math.round(((event.number - 1) / this.total) * 100));
     this.tick();
   }
 

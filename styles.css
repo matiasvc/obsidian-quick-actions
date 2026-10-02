@@ -185,6 +185,13 @@
   background: transparent;
   color: var(--text-faint);
 }
+/* A value an If block may leave unset, so it can be empty. */
+.quick-actions-pill.is-maybe {
+  background: transparent;
+  box-shadow: none;
+  outline: 1.5px dashed hsla(var(--color-accent-hsl), 0.7);
+  outline-offset: -1.5px;
+}
 .quick-actions-pill.is-builtin {
   background: var(--background-modifier-hover);
   color: var(--text-muted);
@@ -642,6 +649,98 @@ body:not(.is-phone) .quick-actions-form .setting-item-control input[type="text"]
 .quick-actions-rail-add {
   padding: var(--size-4-2) var(--size-4-2) 0;
 }
+
+/* ---- If blocks in the rail: a framed box, its if the header, each else_if and else a divider,
+   its end_if the bottom edge. Rows inside indent by depth, and the innermost frame is drawn. ---- */
+.quick-actions-rail-item.is-in-block,
+.quick-actions-rail-item.is-block-head,
+.quick-actions-rail-item.is-block-end {
+  --frame: rgba(var(--color-orange-rgb), 0.45);
+  margin-inline-start: calc(var(--depth) * 12px);
+  border-radius: 0;
+  border-inline: 1px solid var(--frame);
+}
+.quick-actions-rail-item.is-block-head {
+  margin-top: var(--size-2-2);
+  border-top: 1px solid var(--frame);
+  border-radius: var(--radius-m) var(--radius-m) 0 0;
+  background: rgba(var(--color-orange-rgb), 0.08);
+}
+.quick-actions-rail-item.is-block-head.is-active {
+  background: rgba(var(--color-orange-rgb), 0.18);
+}
+.quick-actions-rail-item.is-block-end {
+  min-height: var(--size-4-2);
+  padding: 0;
+  margin-bottom: var(--size-2-2);
+  border-bottom: 1px solid var(--frame);
+  border-radius: 0 0 var(--radius-m) var(--radius-m);
+}
+.quick-actions-rail-item.is-block-branch {
+  border-top: 1px dashed var(--frame);
+  padding-block: var(--size-2-1);
+  font-size: var(--font-ui-smaller);
+  gap: var(--size-2-3);
+}
+.quick-actions-step-icon.is-if,
+.quick-actions-branch-label,
+.quick-actions-branch-kw {
+  color: var(--color-orange);
+}
+.quick-actions-branch-label {
+  font-weight: var(--font-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quick-actions-branch-run {
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* ---- The If block's pane: a row per branch, each with its tests. ---- */
+.quick-actions-step-kind {
+  font-weight: var(--font-semibold);
+  color: var(--color-orange);
+  padding-inline: var(--size-2-3);
+}
+.quick-actions-branches-hint {
+  padding: var(--size-4-2) var(--size-4-3) 0;
+}
+.quick-actions-branches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  padding: var(--size-4-2) var(--size-4-3);
+}
+.quick-actions-branch {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: var(--size-4-2) var(--size-4-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+.quick-actions-branch-top,
+.quick-actions-test {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  flex-wrap: wrap;
+}
+.quick-actions-branch-kw {
+  font-weight: var(--font-semibold);
+  min-width: 52px;
+}
+.quick-actions-test .quick-actions-field {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.quick-actions-branch-buttons {
+  display: flex;
+  gap: var(--size-4-2);
+  padding: 0 var(--size-4-3) var(--size-4-3);
+}
 .quick-actions-pane {
   flex: 1;
   min-width: 0;
@@ -906,6 +1005,12 @@ body:not(.is-phone) .quick-actions-card-body .setting-item:not(.is-stacked) .qui
 }
 .is-phone .quick-actions-rail-item {
   padding: var(--size-4-3);
+}
+.is-phone .quick-actions-rail-item.is-block-end {
+  padding: 0;
+}
+.is-phone .quick-actions-rail-item.is-block-branch {
+  padding-block: var(--size-4-2);
 }
 .is-phone .is-pane-open .quick-actions-rail,
 .is-phone .quick-actions-editor:not(.is-pane-open) .quick-actions-pane {

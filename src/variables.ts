@@ -3,6 +3,7 @@
 import { OutputType, Step } from "./types";
 import { STEP_DEFS, ResolveMode, outputsOf, setOutputName, templatedFields } from "./steps";
 import { applyFilter, escapeYaml, frontmatterEnd, isFilter, notePath, quoteContext, safeFileName } from "./text";
+import { blockOfMarker, exclusive } from "./flow";
 
 // {{name}} or {{name|filter|filter}}. Every reader of templates goes through this.
 export const VAR_RE = /\{\{(\w+)((?:\|\w+)*)\}\}/g;
@@ -18,6 +19,8 @@ export interface InputInfo {
   name: string;
   type: OutputType;
   from: number; // step index, or -1 for a built-in
+  sources?: number[]; // every step it may come from, when an If block sets it in some branches
+  maybe?: boolean; // an If block may finish without setting it, so it can be empty
 }
 
 export interface BuiltinInfo extends InputInfo {
@@ -70,19 +73,81 @@ export function parseRefs(template: string): VarRef[] {
   return refs;
 }
 
+// The name a template refers to when the whole template is one reference without filters.
+function soleRef(template: string): string | null {
+  const whole = template.trim();
+  const refs = parseRefs(whole);
+  return refs.length === 1 && refs[0].length === whole.length && refs[0].filters.length === 0 ? refs[0].name : null;
+}
+
 export function producedNames(steps: Step[]): string[] {
   return steps.flatMap((s) => outputsOf(s).map((o) => o.name));
 }
 
-// Built-ins plus the outputs of steps 0..i-1. When two earlier steps produce
-// the same name the nearest producer wins.
+type Scope = Map<string, InputInfo>;
+
+interface Frame {
+  before: Scope; // what was there when the block began
+  branches: Scope[]; // what each finished branch leaves
+  hasElse: boolean;
+}
+
+const sourcesOf = (input: InputInfo): number[] => input.sources ?? [input.from];
+
+// Built-ins plus what the steps before step i produce. When two earlier steps produce the same
+// name, the nearest wins. A step in a branch sees only its own branch, not the ones beside it, and
+// the tests of an Else if see what came before its block. After a block, a name its branches set
+// is there, marked maybe unless every branch sets it and one of them always runs.
 export function availableInputs(steps: Step[], i: number): InputInfo[] {
-  const byName = new Map<string, InputInfo>();
-  for (const b of BUILTINS) byName.set(b.name, b);
+  const s = steps[i];
+  if (s?.type === "else_if" || s?.type === "else") i = blockOfMarker(steps, i)?.start ?? i;
+  return scopeBefore(steps, i);
+}
+
+// What the steps before index i hand down, taking i as a place in the list. Unlike
+// availableInputs, an Else if or Else at i doesn't send it back to the start of its block.
+export function scopeBefore(steps: Step[], i: number): InputInfo[] {
+  const stack: Frame[] = [];
+  let current: Scope = new Map();
+  for (const b of BUILTINS) current.set(b.name, b);
   for (let j = 0; j < Math.min(i, steps.length); j++) {
-    for (const out of outputsOf(steps[j])) byName.set(out.name, { name: out.name, type: out.type, from: j });
+    const s = steps[j];
+    const top = stack[stack.length - 1];
+    if (s.type === "if") {
+      stack.push({ before: current, branches: [], hasElse: false });
+      current = new Map(current);
+    } else if ((s.type === "else_if" || s.type === "else") && top) {
+      top.branches.push(current);
+      top.hasElse ||= s.type === "else";
+      current = new Map(top.before);
+    } else if (s.type === "end_if" && top) {
+      stack.pop();
+      top.branches.push(current);
+      current = mergeBranches(top);
+    } else {
+      for (const out of outputsOf(s)) current.set(out.name, { name: out.name, type: out.type, from: j });
+    }
   }
-  return [...byName.values()];
+  return [...current.values()];
+}
+
+// What a finished block leaves: what was there before, and each name a branch set. When not every
+// path through the block sets a name, the value from before the block is one of its sources. A
+// name is certain when every branch sets it and an Else makes one always run, or when it was
+// certain before the block.
+function mergeBranches(frame: Frame): Scope {
+  const merged = new Map(frame.before);
+  const names = new Set(frame.branches.flatMap((b) => [...b.keys()]));
+  for (const name of names) {
+    const prior = frame.before.get(name);
+    const set = frame.branches.map((b) => b.get(name)).filter((info): info is InputInfo => info !== undefined && info !== prior);
+    if (set.length === 0) continue;
+    const everywhere = frame.hasElse && set.length === frame.branches.length;
+    const sources = [...new Set([...set.flatMap(sourcesOf), ...(prior && !everywhere ? sourcesOf(prior) : [])])].filter((j) => j >= 0);
+    const always = everywhere ? !set.some((info) => info.maybe) : prior !== undefined && !prior.maybe;
+    merged.set(name, { name, type: set[set.length - 1].type, from: Math.max(...sources), sources, ...(always ? {} : { maybe: true }) });
+  }
+  return merged;
 }
 
 export function referencedNames(text: string): string[] {
@@ -104,50 +169,124 @@ export function unknownFilters(template: string): string[] {
 }
 
 // Names whose values a path makes safe for a file name: the outputs of steps that produce typed
-// or generated text, and the built-ins marked for it.
+// or generated text, and the built-ins marked for it. A name some step produces as a file is left
+// out, and so is a Set a value whose value is just such a file, since cleaning would break the path.
 export function cleanedInPaths(steps: Step[]): Set<string> {
   const names = new Set(BUILTINS.filter((b) => b.cleanInPath).map((b) => b.name));
+  const files = new Set(BUILTINS.filter((b) => b.type === "file").map((b) => b.name));
   for (const s of steps) {
-    if (STEP_DEFS[s.type].cleanInPath) for (const o of outputsOf(s)) names.add(o.name);
+    for (const o of outputsOf(s)) if (o.type === "file") files.add(o.name);
+    const ref = s.type === "set_value" ? soleRef(s.value) : null;
+    if (s.type === "set_value" && ref !== null && files.has(ref)) files.add(s.variable);
+    else if (STEP_DEFS[s.type].cleanInPath) for (const o of outputsOf(s)) names.add(o.name);
   }
+  for (const f of files) names.delete(f);
   return names;
 }
 
-// Indices of later steps that read the producer's output `name`, or any of its outputs when
-// `name` is omitted. Each name stops at a step that re-defines it, since consumers past it see that one.
+// Indices of later steps whose value of the producer's output `name`, or of any of its outputs
+// when `name` is omitted, may come from the producer.
 export function consumersOf(steps: Step[], producer: number, name?: string): number[] {
   const names = name === undefined ? outputsOf(steps[producer]).map((o) => o.name) : [name];
-  const result = new Set<number>();
-  for (const n of names) {
-    for (let j = producer + 1; j < steps.length; j++) {
-      if (usedInputs(steps[j]).includes(n)) result.add(j);
-      if (outputsOf(steps[j]).some((o) => o.name === n)) break;
-    }
+  const result: number[] = [];
+  for (let j = producer + 1; j < steps.length; j++) {
+    const used = usedInputs(steps[j]).filter((n) => names.includes(n));
+    if (used.length === 0) continue;
+    const inputs = availableInputs(steps, j);
+    const fed = used.some((n) => {
+      const input = inputs.find((x) => x.name === n);
+      return input !== undefined && sourcesOf(input).includes(producer);
+    });
+    if (fed) result.push(j);
   }
-  return [...result].sort((a, b) => a - b);
+  return result;
 }
 
-// Renames one of a producer's outputs and rewrites every consumer, keeping their filters. Returns
-// false, changing nothing, when the name is invalid, built-in, or produced by another step or
-// another output of this one.
+// Whether two steps may produce the same name. A Set a value is there to replace a value, and
+// steps in different branches of a block never both run.
+function mayShareName(steps: Step[], a: number, b: number): boolean {
+  return steps[a].type === "set_value" || steps[b].type === "set_value" || exclusive(steps, a, b);
+}
+
+// For each step, the steps it reads values from. Built-ins are left out.
+function readsFrom(steps: Step[]): Set<number>[] {
+  return steps.map((s, k) => {
+    const inputs = availableInputs(steps, k);
+    const read = new Set<number>();
+    for (const name of usedInputs(s)) {
+      const input = inputs.find((x) => x.name === name);
+      if (input) for (const j of sourcesOf(input)) if (j >= 0) read.add(j);
+    }
+    return read;
+  });
+}
+
+// Rewrites `from` to `to` in a step's templates, keeping their filters.
+function renameRefs(step: Step, from: string, to: string): void {
+  for (const f of templatedFields(step)) {
+    f.set(f.value.replace(VAR_RE, (match: string, name: string, chain: string) => (name === from ? formatRef(to, splitChain(chain)) : match)));
+  }
+}
+
+// Renames one of a producer's outputs and rewrites every consumer, keeping their filters. The
+// other steps a consumer may read the same value from, such as the other branches of a block, are
+// renamed with it. Returns false, changing nothing, when the name is invalid, built-in, another
+// output of a renamed step, or produced by a step it can't share a name with, or when the rename
+// would cut a step off from a step it reads now.
 export function renameOutput(steps: Step[], producer: number, from: string, to: string): boolean {
-  const step = steps[producer];
-  const outs = outputsOf(step);
-  if (!outs.some((o) => o.name === from)) return false;
+  if (!outputsOf(steps[producer]).some((o) => o.name === from)) return false;
   if (to === from) return true;
   if (!isValidName(to) || isBuiltin(to)) return false;
-  if (outs.some((o) => o.name === to)) return false;
-  for (let j = 0; j < steps.length; j++) {
-    if (j !== producer && outputsOf(steps[j]).some((o) => o.name === to)) return false;
-  }
-  for (const j of consumersOf(steps, producer, from)) {
-    const target = steps[j] as unknown as Record<string, unknown>;
-    for (const f of templatedFields(steps[j])) {
-      target[f.key] = f.value.replace(VAR_RE, (match: string, name: string, chain: string) => (name === from ? formatRef(to, splitChain(chain)) : match));
+  const group = new Set([producer]);
+  const consumers = new Set<number>();
+  for (const g of group) {
+    for (const j of consumersOf(steps, g, from)) {
+      consumers.add(j);
+      const input = availableInputs(steps, j).find((x) => x.name === from);
+      if (input) for (const s of sourcesOf(input)) if (s >= 0) group.add(s);
     }
   }
-  setOutputName(step, from, to);
+  for (const g of group) {
+    if (outputsOf(steps[g]).some((o) => o.name === to)) return false;
+    for (let j = 0; j < steps.length; j++) {
+      if (!group.has(j) && outputsOf(steps[j]).some((o) => o.name === to) && !mayShareName(steps, g, j)) return false;
+    }
+  }
+  const apply = (list: Step[]) => {
+    for (const j of consumers) renameRefs(list[j], from, to);
+    for (const g of group) setOutputName(list[g], from, to);
+  };
+  const copy = JSON.parse(JSON.stringify(steps)) as Step[];
+  apply(copy);
+  const before = readsFrom(steps);
+  const after = readsFrom(copy);
+  if (before.some((read, k) => [...read].some((j) => !after[k].has(j)))) return false;
+  apply(steps);
   return true;
+}
+
+// Copies of steps start..end, to go in just after end. Each copied output gets a name nothing else
+// produces, and references inside the copies follow the new names. A Set a value inside a copied
+// block keeps its name, since setting a name again is what it is for.
+export function copySteps(steps: Step[], start: number, end: number): Step[] {
+  const taken = new Set(producedNames(steps));
+  const renamed = new Map<string, string>();
+  const copies = steps.slice(start, end + 1).map((s) => JSON.parse(JSON.stringify(s)) as Step);
+  for (const copy of copies) {
+    for (const [from, to] of renamed) renameRefs(copy, from, to);
+    for (const out of outputsOf(copy)) {
+      if (copy.type === "set_value" && end > start) {
+        renamed.delete(out.name);
+        continue;
+      }
+      const name = uniqueName(out.name, taken);
+      taken.add(name);
+      if (name === out.name) continue;
+      setOutputName(copy, out.name, name);
+      renamed.set(out.name, name);
+    }
+  }
+  return copies;
 }
 
 export interface ResolveOptions {

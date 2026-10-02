@@ -4,6 +4,7 @@ import { STEP_DEFS, modelOf, outputsOf, stepLabel, usesWeb, withoutUnavailable }
 import { ResolveOptions, cleanedInPaths, namesUsedBy, resolveStep } from "./variables";
 import { findUrl, notePath, pathToLink, sourceList } from "./text";
 import { InsertPreview, Splice, applySplice, findHeadingLine, findInsertSpot, findInserted, insertContext, insertEdit } from "./insert";
+import { Block, blocksOf, branchEnd, isMarker, skipMarkers, stepCount, stepNumbers, testPasses } from "./flow";
 import { Attachment, REQUEST_LIMIT, apiKeyFor, askModel, askModelStructured, mediaTypeOf, providerLabel } from "./llm";
 import { fetchPage } from "./fetch";
 import { findQuickTasks } from "./quicktasks";
@@ -35,21 +36,23 @@ interface Output {
 
 export interface StepResult {
   index: number;
-  status: "ok" | "skipped" | "cancelled" | "failed";
+  status: "ok" | "stopped" | "skipped" | "cancelled" | "failed"; // stopped: a Stop step ended the run, as finished
   resolved: Record<string, string>; // templated fields after substitution
   outputs: Output[];
   note?: string; // what happened, or would have happened in a dry run
   error?: string;
   writes?: Write[];
   preview?: InsertPreview;
+  branch?: number; // for an If, the marker of the branch that ran, or -1 when none did
   ms: number;
 }
 
 export interface RunResult {
   steps: StepResult[];
   vars: Record<string, string>;
-  status: "ok" | "cancelled" | "failed";
+  status: "ok" | "stopped" | "cancelled" | "failed";
   ms: number;
+  next: number; // where a continued run starts, past any branch the run skipped
 }
 
 // How a run resolves its templates: links in the vault's format, paths that clean typed and
@@ -67,31 +70,48 @@ export function resolveOptions(app: App, steps: Step[]): ResolveOptions {
   };
 }
 
-// Runs the step pipeline. Returns the captured vars so a later run can continue from them.
+// Runs the step pipeline. Returns the captured vars so a later run can continue from them. An If
+// block runs one of its branches and skips the rest, and a Stop step ends the run.
 export async function runAction(app: App, action: Action, models: ModelConfig[], opts: RunOptions): Promise<RunResult> {
   const preset = opts.preset ?? {};
+  const steps = action.steps;
   // A continued run already holds the built-ins its first part read.
-  const vars = opts.vars ? { ...preset, ...opts.vars } : { ...(await builtinVars(app, namesUsedBy(action.steps))), ...preset };
+  const vars = opts.vars ? { ...preset, ...opts.vars } : { ...(await builtinVars(app, namesUsedBy(steps))), ...preset };
   const from = opts.from ?? 0;
-  const to = Math.min(opts.to ?? action.steps.length, action.steps.length);
-  const ctx: StepContext = { app, action, models, opts, vars, resolve: resolveOptions(app, action.steps) };
+  const to = Math.min(opts.to ?? steps.length, steps.length);
+  const ctx: StepContext = { app, action, models, opts, vars, resolve: resolveOptions(app, steps) };
+  const blocks = blocksOf(steps);
+  const numbers = stepNumbers(steps);
   const results: StepResult[] = [];
   const start = Date.now();
   let status: RunResult["status"] = "ok";
 
-  for (let i = from; i < to; i++) {
-    const step = action.steps[i];
+  let i = skipMarkers(steps, from, blocks);
+  while (i < to) {
+    const step = steps[i];
     if (opts.cancelled?.()) {
       results.push({ ...cancelled("Cancelled"), index: i });
       status = "cancelled";
       break;
     }
+    if (step.type === "if") {
+      const block = blocks.get(i);
+      const next = block ? runIf(ctx, block, results) : i + 1;
+      if (typeof next === "string") {
+        results.push({ ...failed(next), index: i });
+        status = "failed";
+        break;
+      }
+      i = skipMarkers(steps, next, blocks);
+      continue;
+    }
     const given = presetOutputs(step, ctx.resolve, opts.preset);
     if (given) {
       results.push(produce({ ...ok(), index: i }, vars, given));
+      i = skipMarkers(steps, i + 1, blocks);
       continue;
     }
-    opts.onStep?.({ index: i, step });
+    opts.onStep?.({ number: numbers[i], step });
     const stepStart = Date.now();
     let result: StepResult;
     try {
@@ -102,12 +122,57 @@ export async function runAction(app: App, action: Action, models: ModelConfig[],
     result.index = i;
     result.ms = Date.now() - stepStart;
     results.push(result);
-    if (result.status === "cancelled" || result.status === "failed") {
+    if (result.status === "stopped" || result.status === "cancelled" || result.status === "failed") {
       status = result.status;
       break;
     }
+    i = skipMarkers(steps, i + 1, blocks);
   }
-  return { steps: results, vars, status, ms: Date.now() - start };
+  return { steps: results, vars, status, ms: Date.now() - start, next: i };
+}
+
+// Runs an If block's tests and returns where the run goes on: the first step of the first branch
+// whose tests pass, of the Else, or past the block. A pattern that can't be matched returns the
+// error instead. Outputs of the skipped branches start empty, so a step after the block reads ""
+// and not the bare {{name}}, and their steps are marked as not taken.
+function runIf(ctx: StepContext, block: Block, results: StepResult[]): number | string {
+  const steps = ctx.action.steps;
+  let chosen = -1;
+  for (const m of block.branches) {
+    const s = steps[m];
+    if (s.type === "else") {
+      chosen = m;
+      break;
+    }
+    if (s.type !== "if" && s.type !== "else_if") continue;
+    const r = resolveStep(s, ctx.vars, ctx.resolve);
+    const passes: boolean[] = [];
+    for (const [n, t] of s.tests.entries()) {
+      try {
+        passes.push(testPasses(t.op, r[`tests.${n}.value`], r[`tests.${n}.text`]));
+      } catch {
+        return `“${t.text}” is not a valid pattern`;
+      }
+    }
+    if (passes.length > 0 && (s.match === "any" ? passes.some(Boolean) : passes.every(Boolean))) {
+      chosen = m;
+      break;
+    }
+  }
+  block.branches.forEach((m, k) => {
+    if (m === chosen) return;
+    for (let j = m + 1; j < branchEnd(block, k); j++) {
+      if (isMarker(steps[j])) continue;
+      const empty = outputsOf(steps[j]).filter((out) => !(out.name in ctx.vars));
+      const result = produce({ ...ok(), index: j, status: "skipped" }, ctx.vars, empty.map((out) => ({ ...out, value: "" })));
+      if (!ctx.opts.write) result.note = "Not taken";
+      results.push(result);
+    }
+  });
+  const k = block.branches.indexOf(chosen);
+  const which = chosen < 0 ? "No branch ran" : k === 0 ? "The first branch ran" : steps[chosen].type === "else" ? "The Else branch ran" : `Else if ${k} ran`;
+  results.push({ ...ok(), index: block.start, branch: chosen, note: ctx.opts.write ? undefined : which });
+  return chosen < 0 ? block.end + 1 : chosen + 1;
 }
 
 // A step's outputs from URI values, when its type takes them and every output has one.
@@ -128,7 +193,7 @@ export async function executeAction(
   opts: { preset?: Record<string, string>; from?: number; vars?: Record<string, string>; priorWrites?: Write[] } = {},
 ): Promise<void> {
   if (opts.from === undefined) rememberAction(app, action.id);
-  const progress = new RunProgress(action.name, action.steps.length, models);
+  const progress = new RunProgress(action.name, stepCount(action.steps), models);
   const run = await runAction(app, action, models, {
     write: true,
     from: opts.from,
@@ -142,7 +207,7 @@ export async function executeAction(
   const writes = [...(opts.priorWrites ?? []), ...run.steps.flatMap((r) => r.writes ?? [])];
   const last = run.steps[run.steps.length - 1];
   if (run.status === "failed" && last) {
-    console.error(`Quick Actions "${action.name}" step ${last.index + 1} failed:`, last.error);
+    console.error(`Quick Actions "${action.name}" step ${stepNumbers(action.steps)[last.index]} failed:`, last.error);
     failureNotice(app, action, models, last, run.vars, writes, opts.preset);
     return;
   }
@@ -165,7 +230,8 @@ function failureNotice(
   preset?: Record<string, string>,
 ): void {
   const i = last.index;
-  const links: NoticeLink[] = [{ text: `Retry step ${i + 1}`, click: () => void executeAction(app, action, models, { from: i, vars, preset, priorWrites: writes }) }];
+  const n = stepNumbers(action.steps)[i];
+  const links: NoticeLink[] = [{ text: `Retry step ${n}`, click: () => void executeAction(app, action, models, { from: i, vars, preset, priorWrites: writes }) }];
   // What you typed into Ask me steps, so nothing typed is lost even when Retry can't help.
   const typed = action.steps
     .slice(0, i)
@@ -184,7 +250,7 @@ function failureNotice(
     });
   }
   if (writes.length > 0) links.push(undoLink(app, writes));
-  linkNotice([`${stepLabel(action.steps[i], models)}: ${last.error ?? "failed"}`], links, 0, `${action.name} stopped at step ${i + 1} of ${action.steps.length}`);
+  linkNotice([`${stepLabel(action.steps[i], models)}: ${last.error ?? "failed"}`], links, 0, `${action.name} stopped at step ${n} of ${stepCount(action.steps)}`);
 }
 
 function undoLink(app: App, writes: Write[]): NoticeLink {
@@ -465,15 +531,20 @@ async function executeStep(ctx: StepContext, step: Step, i: number): Promise<Ste
       }
     }
     case "fetch_page": {
-      const url = findUrl(resolved.url);
-      if (!url) {
-        if (step.noUrl === "fail") return failed("No URL in the value", resolved);
+      // Without a page, the text goes on as the page with an empty title, unless the step says to
+      // stop. A real run only mentions a failed fetch, since text without a link is normal.
+      const asText = (note: string | undefined) => {
         const result = produce(ok(resolved), vars, [
           { name: step.variable, type: "text", value: resolved.url },
           { name: step.titleVariable, type: "text", value: "" },
         ]);
-        result.note = "No URL, so the text was used as the page";
+        result.note = note;
         return result;
+      };
+      const url = findUrl(resolved.url);
+      if (!url) {
+        if (step.noUrl === "fail") return failed("No URL in the value", resolved);
+        return asText(write ? undefined : "No URL, so the text was used as the page");
       }
       try {
         const page = await fetchPage(url);
@@ -482,9 +553,21 @@ async function executeStep(ctx: StepContext, step: Step, i: number): Promise<Ste
           { name: step.titleVariable, type: "text", value: page.title },
         ]);
       } catch (e) {
-        return failed(`${url}: ${e instanceof Error ? e.message : String(e)}`, resolved);
+        const message = e instanceof Error ? e.message : String(e);
+        if (step.noUrl === "fail") return failed(`${url}: ${message}`, resolved);
+        return asText(`Couldn't fetch ${url} (${message}), so the text was used as the page`);
       }
     }
+    case "set_value":
+      return produce(ok(resolved), vars, [{ name: step.variable, type: "text", value: resolved.value }]);
+    case "stop":
+      return { ...ok(resolved), status: "stopped", note: resolved.message || (write ? undefined : "The action stops here") };
+    // runAction runs an If block itself and never reaches its markers.
+    case "if":
+    case "else_if":
+    case "else":
+    case "end_if":
+      return ok(resolved);
     case "create_file": {
       const result = produce(ok(resolved), vars, [{ name: step.variable, type: "file", value: resolved.path }]);
       if (app.vault.getAbstractFileByPath(resolved.path)) {

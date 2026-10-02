@@ -2,6 +2,7 @@ import { App, Notice, setIcon } from "obsidian";
 import { Action, ModelConfig, OutputType, Step } from "./types";
 import { STEP_DEFS, isModelMissing, stepTitle } from "./steps";
 import { BUILTINS, InputInfo } from "./variables";
+import { isMarker, stepNumbers } from "./flow";
 import type { PillField } from "./pillfield";
 
 // Small DOM helpers shared by the settings tab and the editors.
@@ -57,9 +58,11 @@ export function renderPill(parent: HTMLElement, name: string, type: OutputType |
   return el;
 }
 
-export function describeInput(input: InputInfo, steps: Step[], models: ModelConfig[]): string {
+// `numbers` is stepNumbers(steps), passed in by callers that describe several inputs.
+export function describeInput(input: InputInfo, steps: Step[], models: ModelConfig[], numbers = stepNumbers(steps)): string {
   if (input.from < 0) return BUILTINS.find((b) => b.name === input.name)?.source ?? "Always available";
-  return `Step ${input.from + 1} · ${stepTitle(steps[input.from], models)} · ${input.type}`;
+  const maybe = input.maybe ? " · can be empty after its If block" : "";
+  return `Step ${numbers[input.from]} · ${stepTitle(steps[input.from], models)} · ${input.type}${maybe}`;
 }
 
 // The "In" band: every value this step could use, tinted when it does.
@@ -77,6 +80,7 @@ export function renderInBand(
   const builtins = inputs.filter((i) => i.from < 0);
   for (const input of [...fromSteps, ...builtins]) {
     const pill = renderPill(band, input.name, input.type, { off: !used.has(input.name), cls: "is-pickable" });
+    if (input.maybe) pill.addClass("is-maybe");
     pill.setAttr("aria-label", `${describe(input)}. Click to insert.`);
     // Keep the field's focus and caret so the pill lands where the user was typing.
     pill.addEventListener("mousedown", (evt) => evt.preventDefault());
@@ -110,7 +114,8 @@ export class FieldFocusTracker {
 // The step chain shown on an action row: chips joined by chevrons.
 export function chainEl(parent: HTMLElement, steps: Step[], models: ModelConfig[]): HTMLElement {
   const chain = parent.createDiv("quick-actions-chain");
-  steps.forEach((step, i) => {
+  // An If block shows as its If chip. Its branches' steps follow in order.
+  steps.filter((step) => !isMarker(step)).forEach((step, i) => {
     if (i > 0) iconEl(chain, "chevron-right", "quick-actions-arrow");
     const chip = labelEl(chain, "quick-actions-chip", STEP_DEFS[step.type].icon, stepTitle(step, models));
     if (step.type === "llm") chip.addClass("is-llm");

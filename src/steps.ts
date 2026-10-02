@@ -1,9 +1,10 @@
 // The step table: the one place that knows what each step type is, what it
 // produces, and which fields it edits.
-import { LLMStep, ModelConfig, OutputType, Step, StepType } from "./types";
-import { uniqueName } from "./variables";
+import { BranchTest, LLMStep, ModelConfig, OutputType, Step, StepType } from "./types";
+import { parseRefs, uniqueName } from "./variables";
+import { TEST_OPS } from "./flow";
 
-export type StepGroup = "ask" | "generate" | "do";
+export type StepGroup = "ask" | "generate" | "do" | "flow";
 
 // How many searches or page reads a model step may make for one reply.
 export const WEB_MAX_USES = 5;
@@ -209,8 +210,9 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
       { key: "url", label: "URL", kind: "line", desc: "A URL, or a value with one in it. The first URL is used.", placeholder: "{{source}}" },
       {
         key: "noUrl",
-        label: "If there is no URL",
+        label: "When there is no page",
         kind: "dropdown",
+        desc: "No URL in the value, or the fetch failed.",
         options: [
           { value: "text", label: "Use the text as the page" },
           { value: "fail", label: "Stop the action" },
@@ -313,15 +315,115 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     ],
     make: () => ({ type: "open_file", target: "", section: "", openIn: "current" }),
   },
+  if: {
+    type: "if",
+    verb: "If",
+    icon: "split",
+    group: "flow",
+    description: "Run steps only when a value passes a test, with Else if and Else branches",
+    output: null,
+    defaultOutput: "",
+    outputHint: "",
+    cleanInPath: false,
+    fromUri: false,
+    fields: [],
+    make: () => ({ type: "if", match: "all", tests: [newTest()] }),
+  },
+  else_if: {
+    type: "else_if",
+    verb: "Else if",
+    icon: "split",
+    group: "flow",
+    description: "",
+    output: null,
+    defaultOutput: "",
+    outputHint: "",
+    cleanInPath: false,
+    fromUri: false,
+    fields: [],
+    make: () => ({ type: "else_if", match: "all", tests: [newTest()] }),
+  },
+  else: {
+    type: "else",
+    verb: "Else",
+    icon: "split",
+    group: "flow",
+    description: "",
+    output: null,
+    defaultOutput: "",
+    outputHint: "",
+    cleanInPath: false,
+    fromUri: false,
+    fields: [],
+    make: () => ({ type: "else" }),
+  },
+  end_if: {
+    type: "end_if",
+    verb: "End of If",
+    icon: "split",
+    group: "flow",
+    description: "",
+    output: null,
+    defaultOutput: "",
+    outputHint: "",
+    cleanInPath: false,
+    fromUri: false,
+    fields: [],
+    make: () => ({ type: "end_if" }),
+  },
+  set_value: {
+    type: "set_value",
+    verb: "Set a value",
+    icon: "braces",
+    group: "flow",
+    description: "Turn a template into a named value",
+    output: "text",
+    defaultOutput: "value",
+    outputHint: "the value",
+    cleanInPath: true,
+    fromUri: false,
+    fields: [
+      {
+        key: "value",
+        label: "Value",
+        kind: "block",
+        desc: "Becomes the value named in the Out band. Other steps may set the same name, and the last one that runs wins.",
+        placeholder: "{{page_title}}",
+      },
+    ],
+    make: () => ({ type: "set_value", variable: "value", value: "" }),
+  },
+  stop: {
+    type: "stop",
+    verb: "Stop",
+    icon: "octagon-x",
+    group: "flow",
+    description: "End the action here, as finished",
+    output: null,
+    defaultOutput: "",
+    outputHint: "nothing · the action ends here",
+    cleanInPath: false,
+    fromUri: false,
+    fields: [{ key: "message", label: "Message", kind: "line", desc: "Shown when the action stops here. Leave empty for none.", placeholder: "There was no link to fetch" }],
+    make: () => ({ type: "stop", message: "" }),
+  },
 };
+
+export function newTest(): BranchTest {
+  return { value: "", op: "filled", text: "" };
+}
 
 export const STEP_GROUPS: { id: StepGroup; label: string; types: StepType[] }[] = [
   { id: "ask", label: "Ask", types: ["prompt", "choice", "file_picker", "quick_task"] },
   { id: "generate", label: "Fetch and generate", types: ["fetch_page", "llm"] },
   { id: "do", label: "Do", types: ["create_file", "insert_in_section", "open_file"] },
+  { id: "flow", label: "Flow", types: ["if", "set_value", "stop"] },
 ];
 
 export const STEP_TYPES_IN_ORDER: StepType[] = STEP_GROUPS.flatMap((g) => g.types);
+
+// The types a step can be switched to in place. An If block needs its end, so it is only added.
+export const CONVERTIBLE_TYPES: StepType[] = STEP_TYPES_IN_ORDER.filter((t) => t !== "if");
 
 export function makeStep(type: StepType): Step {
   return STEP_DEFS[type].make();
@@ -402,16 +504,44 @@ export function freshOutputs(step: Step, taken: Iterable<string>): Step {
   return step;
 }
 
-// The fields whose values may contain {{variables}}, each with how its values are finished.
-export function templatedFields(step: Step): { key: string; value: string; mode: ResolveMode }[] {
+export interface TemplatedField {
+  key: string; // the field's key, which resolveStep's result uses
+  value: string;
+  mode: ResolveMode;
+  set: (value: string) => void;
+}
+
+// The fields whose values may contain {{variables}}, each with how its values are finished. A
+// branch's tests are fields too, keyed "tests.<n>.value" and "tests.<n>.text".
+export function templatedFields(step: Step): TemplatedField[] {
+  if (step.type === "if" || step.type === "else_if") {
+    return step.tests.flatMap((t, n) => [
+      { key: `tests.${n}.value`, value: t.value, mode: "plain" as const, set: (v: string) => (t.value = v) },
+      { key: `tests.${n}.text`, value: t.text, mode: "plain" as const, set: (v: string) => (t.text = v) },
+    ]);
+  }
   const record = step as unknown as Record<string, unknown>;
-  const result: { key: string; value: string; mode: ResolveMode }[] = [];
+  const result: TemplatedField[] = [];
   for (const f of STEP_DEFS[step.type].fields) {
     if (!TEMPLATED_KINDS.has(f.kind)) continue;
     const v = record[f.key];
-    if (typeof v === "string") result.push({ key: f.key, value: v, mode: f.resolve ?? "plain" });
+    if (typeof v === "string") result.push({ key: f.key, value: v, mode: f.resolve ?? "plain", set: (value) => (record[f.key] = value) });
   }
   return result;
+}
+
+// A branch's tests in a few words, as the rail and the step chain show them: "page_title has
+// text", plus "and 1 more" or "or 1 more" when there are several.
+export function testsSummary(tests: BranchTest[], match: "all" | "any"): string {
+  const first = tests[0];
+  if (!first || !first.value.trim()) return "…";
+  const whole = first.value.trim();
+  const refs = parseRefs(whole);
+  const value = refs.length === 1 && refs[0].length === whole.length ? refs[0].name : whole;
+  const op = TEST_OPS.find((o) => o.value === first.op);
+  const text = op?.needsText ? ` “${first.text}”` : "";
+  const more = tests.length > 1 ? ` ${match === "all" ? "and" : "or"} ${tests.length - 1} more` : "";
+  return `${value} ${op?.label ?? first.op}${text}${more}`;
 }
 
 // Changes a step's type, keeping its name and every same-named field of the same
@@ -439,10 +569,12 @@ export function isModelMissing(step: Step, models: ModelConfig[]): step is LLMSt
   return step.type === "llm" && modelOf(step, models) === null;
 }
 
-// A step's title in the rail and the settings chain: its name, else its model or verb.
+// A step's title in the rail and the settings chain: its name, else its model, its first test
+// for a branch, or its verb.
 export function stepTitle(step: Step, models: ModelConfig[]): string {
   if (step.name?.trim()) return step.name.trim();
   if (step.type === "llm") return modelOf(step, models)?.name ?? (step.model || "Ask a model");
+  if (step.type === "if" || step.type === "else_if") return `${STEP_DEFS[step.type].verb} ${testsSummary(step.tests, step.match)}`;
   return STEP_DEFS[step.type].verb;
 }
 
