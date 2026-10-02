@@ -1,6 +1,7 @@
 import { App, FuzzyMatch, FuzzySuggestModal, Keymap, Modal, Platform, TFile, getIconIds, renderResults, setIcon } from "obsidian";
-import { Action } from "./types";
+import { Action, FileKind } from "./types";
 import { actionUses, loadDraft, recentFiles, saveDraft } from "./recent";
+import { mediaTypeOf } from "./llm";
 
 declare const window: Window & { moment: typeof import("moment") };
 
@@ -124,15 +125,16 @@ export class FilePickerModal extends PickModal<TFile> {
     return this.files;
   }
 
+  // A note by its name, any other file with its extension, so scan.pdf and scan.png differ.
   getItemText(item: TFile): string {
-    return item.basename;
+    return item.extension === "md" ? item.basename : item.name;
   }
 
   renderSuggestion(match: FuzzyMatch<TFile>, el: HTMLElement): void {
     const file = match.item;
     el.addClass("mod-complex");
     const content = el.createDiv("suggestion-content");
-    renderResults(content.createDiv("suggestion-title"), file.basename, match.match);
+    renderResults(content.createDiv("suggestion-title"), this.getItemText(file), match.match);
     const folder = file.parent && !file.parent.isRoot() ? `${file.parent.path} · ` : "";
     content.createDiv({ cls: "suggestion-note", text: `${folder}edited ${window.moment(file.stat.mtime).fromNow()}` });
     if (this.recent.has(file.path)) el.createDiv("suggestion-aux").createSpan({ cls: "suggestion-flair quick-actions-flair", text: "Recent" });
@@ -158,11 +160,12 @@ export function openChoiceModal(app: App, label: string, options: string[]): Pro
   return new Promise((resolve) => new ChoiceModal(app, label, options, resolve).open());
 }
 
-// Picks one of the notes in `folder` (a path prefix, "" for the whole vault). Null when cancelled,
-// undefined when the folder has no notes.
-export function openFilePickerModal(app: App, folder: string, label: string, recentKey: string): Promise<string | null | undefined> {
+// Picks one of the files of `kind` in `folder` (a path prefix, "" for the whole vault). Null when
+// cancelled, undefined when the folder has none.
+export function openFilePickerModal(app: App, folder: string, label: string, recentKey: string, kind: FileKind): Promise<string | null | undefined> {
   const prefix = folder && !folder.endsWith("/") ? folder + "/" : folder;
-  const files = app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(prefix));
+  const all = kind === "notes" ? app.vault.getMarkdownFiles() : app.vault.getFiles().filter((f) => kind === "any" || mediaTypeOf(f.extension) !== undefined);
+  const files = all.filter((f) => f.path.startsWith(prefix));
   if (files.length === 0) return Promise.resolve(undefined);
   return new Promise((resolve) => new FilePickerModal(app, files, label, recentKey, (file) => resolve(file ? file.path : null)).open());
 }

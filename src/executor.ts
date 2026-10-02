@@ -1,10 +1,10 @@
-import { App, MarkdownView, Notice, TFile, TFolder } from "obsidian";
-import { Action, ModelConfig, OutputType, Step } from "./types";
-import { STEP_DEFS, modelOf, outputsOf, stepLabel } from "./steps";
+import { App, MarkdownView, Notice, TFile, TFolder, getLinkpath } from "obsidian";
+import { Action, ModelConfig, OutputType, Page, Step } from "./types";
+import { STEP_DEFS, modelOf, outputsOf, stepLabel, usesWeb, withoutUnavailable } from "./steps";
 import { ResolveOptions, cleanedInPaths, namesUsedBy, resolveStep } from "./variables";
-import { findUrl, notePath, pathToLink } from "./text";
+import { findUrl, notePath, pathToLink, sourceList } from "./text";
 import { InsertPreview, Splice, applySplice, findHeadingLine, findInsertSpot, findInserted, insertContext, insertEdit } from "./insert";
-import { askModel, askModelStructured } from "./llm";
+import { Attachment, REQUEST_LIMIT, apiKeyFor, askModel, askModelStructured, mediaTypeOf, providerLabel } from "./llm";
 import { fetchPage } from "./fetch";
 import { findQuickTasks } from "./quicktasks";
 import { openChoiceModal, openFilePickerModal, openPromptModal } from "./modals";
@@ -52,8 +52,9 @@ export interface RunResult {
   ms: number;
 }
 
-// How a run resolves its templates: links in the vault's format, and paths that clean typed and
-// generated text. The editor's preview uses the same, so it shows what a run writes.
+// How a run resolves its templates: links in the vault's format, paths that clean typed and
+// generated text, and paths to images and PDFs kept as they are. The editor's preview uses the
+// same, so it shows what a run writes.
 export function resolveOptions(app: App, steps: Step[]): ResolveOptions {
   const clean = cleanedInPaths(steps);
   return {
@@ -62,6 +63,7 @@ export function resolveOptions(app: App, steps: Step[]): ResolveOptions {
       return file ? app.fileManager.generateMarkdownLink(file, "") : pathToLink(path);
     },
     clean: (name) => clean.has(name),
+    exists: (path) => app.vault.getFileByPath(path) !== null,
   };
 }
 
@@ -84,7 +86,7 @@ export async function runAction(app: App, action: Action, models: ModelConfig[],
       status = "cancelled";
       break;
     }
-    const given = presetOutputs(step, opts.preset);
+    const given = presetOutputs(step, ctx.resolve, opts.preset);
     if (given) {
       results.push(produce({ ...ok(), index: i }, vars, given));
       continue;
@@ -109,11 +111,11 @@ export async function runAction(app: App, action: Action, models: ModelConfig[],
 }
 
 // A step's outputs from URI values, when its type takes them and every output has one.
-function presetOutputs(step: Step, preset?: Record<string, string>): Output[] | null {
+function presetOutputs(step: Step, resolve: ResolveOptions, preset?: Record<string, string>): Output[] | null {
   if (!preset || !STEP_DEFS[step.type].fromUri) return null;
   const outs = outputsOf(step);
   if (!outs.every((o) => o.name in preset)) return null;
-  return outs.map((o) => ({ ...o, value: o.type === "file" ? notePath(preset[o.name]) : preset[o.name] }));
+  return outs.map((o) => ({ ...o, value: o.type === "file" ? notePath(preset[o.name], resolve.exists) : preset[o.name] }));
 }
 
 // A full run that writes, for commands, the launcher, the ribbon and URIs. One notice shows
@@ -315,6 +317,67 @@ async function createNote(app: App, path: string, content: string, write: boolea
   return { note: `Created ${path}${inFolder}`, writes: [...folders.map((f): Write => ({ kind: "folder", path: f })), { kind: "create", path }] };
 }
 
+function megabytes(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// The browser's own base64 encoder. Obsidian's arrayBufferToBase64 builds a string per byte, which
+// takes several times longer and holds a large array for a big PDF.
+function toBase64(data: ArrayBuffer): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = String(reader.result);
+      resolve(url.slice(url.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read the file"));
+    reader.readAsDataURL(new Blob([data]));
+  });
+}
+
+// The images and PDFs an Ask a model step sends, from a comma-separated list of files: each image
+// or PDF, and for a note the images and PDFs it embeds. File names can hold commas, so each entry
+// is the longest run of pieces that names a file. Before anything is read, the total is checked
+// against what the provider takes in one request.
+async function readAttachments(app: App, value: string, provider: ModelConfig["provider"]): Promise<Attachment[]> {
+  const isAttachable = (f: TFile) => mediaTypeOf(f.extension) !== undefined;
+  const pieces = value.split(",");
+  const named: TFile[] = [];
+  for (let i = 0; i < pieces.length; ) {
+    if (!pieces[i].trim()) {
+      i++;
+      continue;
+    }
+    let end = pieces.length + 1;
+    let file: TFile | null = null;
+    while (!file && --end > i) file = app.metadataCache.getFirstLinkpathDest(pieces.slice(i, end).join(",").trim(), "");
+    if (!file) throw new Error(`No file at ${pieces[i].trim()} to attach`);
+    named.push(file);
+    i = end;
+  }
+  const files: TFile[] = [];
+  for (const file of named) {
+    if (isAttachable(file)) {
+      files.push(file);
+    } else if (file.extension === "md") {
+      const embeds = (app.metadataCache.getFileCache(file)?.embeds ?? [])
+        .map((e) => app.metadataCache.getFirstLinkpathDest(getLinkpath(e.link), file.path))
+        .filter((f): f is TFile => f !== null && isAttachable(f));
+      if (embeds.length === 0) throw new Error(`${file.basename} embeds no images or PDFs to attach`);
+      files.push(...embeds);
+    } else {
+      throw new Error(`${file.name} can't be attached. A model takes images and PDFs.`);
+    }
+  }
+  const unique = [...new Map(files.map((f) => [f.path, f])).values()];
+  const encoded = unique.reduce((sum, f) => sum + Math.ceil(f.stat.size / 3) * 4, 0);
+  if (encoded > REQUEST_LIMIT[provider]) {
+    const sizes = unique.map((f) => `${f.name} ${megabytes(f.stat.size)}`).join(", ");
+    throw new Error(`The attachments (${sizes}) are more than the ${megabytes(REQUEST_LIMIT[provider])} ${providerLabel(provider)} takes in one request`);
+  }
+  return Promise.all(unique.map(async (f) => ({ name: f.name, mediaType: mediaTypeOf(f.extension) ?? "", data: await toBase64(await app.vault.readBinary(f)) })));
+}
+
 interface StepContext {
   app: App;
   action: Action;
@@ -339,8 +402,8 @@ async function executeStep(ctx: StepContext, step: Step, i: number): Promise<Ste
     }
     case "file_picker": {
       const folder = resolved.folder;
-      const value = await openFilePickerModal(app, folder, step.label, key);
-      if (value === undefined) return failed(`No notes in ${folder || "the vault"}`, resolved);
+      const value = await openFilePickerModal(app, folder, step.label, key, step.files);
+      if (value === undefined) return failed(`No ${step.files === "notes" ? "notes" : "files"} in ${folder || "the vault"}`, resolved);
       if (value === null) return cancelled();
       rememberFile(app, key, value);
       return produce(ok(resolved), vars, [{ name: step.variable, type: "file", value }]);
@@ -369,15 +432,34 @@ async function executeStep(ctx: StepContext, step: Step, i: number): Promise<Ste
     case "llm": {
       const config = modelOf(step, models);
       if (!config) return failed(step.model ? `Model "${step.model}" is not configured. Pick another in the step.` : "No models are configured");
+      let attachments: Attachment[];
       try {
+        // A missing key fails before any file is read.
+        apiKeyFor(app, config);
+        attachments = await readAttachments(app, resolved.attach, config.provider);
+      } catch (e) {
+        return failed(e instanceof Error ? e.message : String(e), resolved);
+      }
+      try {
+        // A value its model can't take, left from another model, is not sent.
+        const usable = withoutUnavailable(step, models);
+        const ask = { webSearch: usable.webSearch, webFetch: usable.webFetch, effort: usable.effort, attachments };
+        let values: Output[];
+        let pages: Page[];
         if (step.outputs.length > 0) {
-          const values = await askModelStructured(app, config, resolved.system_prompt, resolved.user_prompt, step.outputs);
-          if (opts.cancelled?.()) return cancelled("Cancelled");
-          return produce(ok(resolved), vars, step.outputs.map((o) => ({ name: o.name, type: "text" as const, value: values[o.name] })));
+          const reply = await askModelStructured(app, config, resolved.system_prompt, resolved.user_prompt, step.outputs, ask);
+          values = step.outputs.map((o) => ({ name: o.name, type: "text", value: reply.values[o.name] }));
+          pages = reply.pages;
+        } else {
+          const reply = await askModel(app, config, resolved.system_prompt, resolved.user_prompt, ask);
+          values = [{ name: step.variable, type: "text", value: reply.text }];
+          pages = reply.pages;
         }
-        const reply = await askModel(app, config, resolved.system_prompt, resolved.user_prompt);
         if (opts.cancelled?.()) return cancelled("Cancelled");
-        return produce(ok(resolved), vars, [{ name: step.variable, type: "text", value: reply }]);
+        if (usesWeb(step)) values.push({ name: step.sourcesVariable, type: "text", value: sourceList(pages) });
+        const result = produce(ok(resolved), vars, values);
+        if (attachments.length) result.note = `Attached ${attachments.map((a) => a.name).join(", ")}`;
+        return result;
       } catch (e) {
         return failed(`${config.name}: ${e instanceof Error ? e.message : String(e)}`, resolved);
       }

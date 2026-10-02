@@ -1,6 +1,6 @@
 import { Notice, ProgressBarComponent } from "obsidian";
 import { ModelConfig, Step } from "./types";
-import { STEP_DEFS, modelOf, outputsOf } from "./steps";
+import { STEP_DEFS, modelOf, replyOutputs, withoutUnavailable } from "./steps";
 import { noticeLink } from "./ui";
 
 export interface StepEvent {
@@ -12,8 +12,10 @@ export interface StepEvent {
 function activityOf(step: Step, models: ModelConfig[]): string | null {
   if (step.type === "llm") {
     const model = modelOf(step, models)?.name ?? "the model";
-    if (step.name?.trim()) return `${step.name.trim()} with ${model}`;
-    return `Asking ${model} for ${outputsOf(step).map((o) => o.name).join(", ")}`;
+    const usable = withoutUnavailable(step, models);
+    const web = usable.webSearch ? ", searching the web" : usable.webFetch ? ", reading pages" : "";
+    if (step.name?.trim()) return `${step.name.trim()} with ${model}${web}`;
+    return `Asking ${model} for ${replyOutputs(step).map((o) => o.name).join(", ")}${web}`;
   }
   return STEP_DEFS[step.type].activity ?? null;
 }
