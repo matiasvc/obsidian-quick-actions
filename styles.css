@@ -369,6 +369,13 @@ div.quick-actions-field-editor {
 .is-dragging {
   opacity: 0.4;
 }
+/* Dragging an If moves its whole block, so the whole block fades. */
+.quick-actions-block:has(> .is-block-head.is-dragging) {
+  opacity: 0.4;
+}
+.quick-actions-block > .is-block-head.is-dragging {
+  opacity: 1;
+}
 .is-drop-before {
   box-shadow: 0 -2px 0 0 var(--interactive-accent);
 }
@@ -618,20 +625,23 @@ body:not(.is-phone) .quick-actions-form .setting-item-control input[type="text"]
   padding: var(--size-4-2) var(--size-4-2) 0;
 }
 
-/* ---- If blocks in the rail: a framed box, its if the header, each else_if and else a divider,
-   its end_if the bottom edge. Rows inside indent by depth, and the innermost frame is drawn. ---- */
-.quick-actions-rail-item.is-in-block,
-.quick-actions-rail-item.is-block-head,
-.quick-actions-rail-item.is-block-end {
+/* ---- If blocks in the rail: a framed container holding the if as its header, each else_if and
+   else as a divider, and its end_if as a thin last row. A block inside a branch is inset. ---- */
+/* A flex column like the rail, so blocks next to each other are spaced the same at every depth. */
+.quick-actions-block {
   --frame: rgba(var(--color-orange-rgb), 0.45);
-  margin-inline-start: calc(var(--depth) * 12px);
-  border-radius: 0;
-  border-inline: 1px solid var(--frame);
+  display: flex;
+  flex-direction: column;
+  margin-block: var(--size-2-2);
+  border: 1px solid var(--frame);
+  border-radius: var(--radius-m);
 }
+.quick-actions-block .quick-actions-block {
+  margin-inline-start: var(--size-4-2);
+}
+/* Rounded to fit inside the frame. Clipping the frame instead would cut off the drop marks. */
 .quick-actions-rail-item.is-block-head {
-  margin-top: var(--size-2-2);
-  border-top: 1px solid var(--frame);
-  border-radius: var(--radius-m) var(--radius-m) 0 0;
+  border-radius: calc(var(--radius-m) - 1px) calc(var(--radius-m) - 1px) 0 0;
   background: rgba(var(--color-orange-rgb), 0.08);
 }
 .quick-actions-rail-item.is-block-head.is-active {
@@ -640,12 +650,10 @@ body:not(.is-phone) .quick-actions-form .setting-item-control input[type="text"]
 .quick-actions-rail-item.is-block-end {
   min-height: var(--size-4-2);
   padding: 0;
-  margin-bottom: var(--size-2-2);
-  border-bottom: 1px solid var(--frame);
-  border-radius: 0 0 var(--radius-m) var(--radius-m);
 }
 .quick-actions-rail-item.is-block-branch {
   border-top: 1px dashed var(--frame);
+  border-radius: 0;
   padding-block: var(--size-2-1);
   font-size: var(--font-ui-smaller);
   gap: var(--size-2-3);

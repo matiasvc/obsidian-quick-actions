@@ -255,8 +255,9 @@ export class ActionEditModal extends Modal {
 
   // ---- Rail ----
 
-  // Every step is one row, so rows and steps share indices. An If block is a framed box: its if
-  // is the header, each else_if and else a divider, and its end_if the bottom edge.
+  // Every step is one row, so rows and steps share indices. The rows of an If block sit in a
+  // .quick-actions-block container, one per block and nested like the blocks, and styles.css
+  // draws the frame.
   private renderRail(): void {
     const rail = this.railEl;
     this.disposeDrag?.();
@@ -267,7 +268,13 @@ export class ActionEditModal extends Modal {
     }
     const numbers = stepNumbers(this.steps);
     const blocks = blocksOf(this.steps);
-    this.railRows = this.steps.map((_, i) => rail.appendChild(this.railRow(i, numbers, blocks)));
+    const parents = [rail];
+    this.railRows = this.steps.map((step, i) => {
+      if (step.type === "if") parents.push(parents[parents.length - 1].createDiv("quick-actions-block"));
+      const row = parents[parents.length - 1].appendChild(this.railRow(i, numbers, blocks));
+      if (step.type === "end_if" && parents.length > 1) parents.pop();
+      return row;
+    });
     const add = rail.createDiv("quick-actions-rail-add");
     const btn = textButton(add, "plus", "Add step", () => showAddStepMenu(btn, (type) => this.addStep(type)), this.steps.length === 0);
     this.disposeDrag = enableDragReorder(rail, {
@@ -279,10 +286,7 @@ export class ActionEditModal extends Modal {
 
   private railRow(i: number, numbers: number[], blocks: Map<number, Block>): HTMLElement {
     const step = this.steps[i];
-    const depth = [...blocks.values()].filter((b) => b.start < i && i < b.end).length;
     const row = createDiv("quick-actions-rail-item");
-    row.style.setProperty("--depth", String(depth));
-    if (depth > 0) row.addClass("is-in-block");
     if (isMarker(step)) {
       this.railMarker(row, step, i, blocks);
       return row;
@@ -310,8 +314,8 @@ export class ActionEditModal extends Modal {
     this.railRows[i] = row;
   }
 
-  // A block's divider or bottom edge. Neither can be dragged, but steps can be dropped next to
-  // them, and clicking one opens the block.
+  // A block's divider or end row. Neither can be dragged, but steps can be dropped next to them,
+  // and clicking one opens the block.
   private railMarker(row: HTMLElement, step: Step, i: number, blocks: Map<number, Block>): void {
     row.addClass("is-fixed", step.type === "end_if" ? "is-block-end" : "is-block-branch");
     const block = blockOfMarker(this.steps, i, blocks);
