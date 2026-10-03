@@ -1,9 +1,8 @@
-import { AbstractInputSuggest, App, Modal, Notice, SecretComponent, Setting, setIcon } from "obsidian";
+import { AbstractInputSuggest, App, Modal, Notice, SecretComponent, Setting, moment } from "obsidian";
 import { ModelConfig } from "./types";
-import { DEFAULT_MAX_TOKENS, PROVIDERS, ProviderModel, listModels, testModel } from "./llm";
-import { formatSeconds } from "./ui";
-
-declare const window: Window & { moment: typeof import("moment") };
+import { ProviderModel, listModels, testModel } from "./llm";
+import { DEFAULT_MAX_TOKENS, PROVIDERS } from "./providers";
+import { errorMessage, formatSeconds, labelEl } from "./ui";
 
 // The provider's model IDs under the Model ID field, newest first. Typing any other ID still works.
 class ModelIdSuggest extends AbstractInputSuggest<ProviderModel> {
@@ -22,7 +21,7 @@ class ModelIdSuggest extends AbstractInputSuggest<ProviderModel> {
   }
 
   // The provider or key changed, so the next lookup asks again. A failed lookup is kept until then,
-  // so typing doesn't send one failing request per key.
+  // so typing doesn't send one failing request per keystroke.
   reset(): void {
     this.list = null;
   }
@@ -34,7 +33,7 @@ class ModelIdSuggest extends AbstractInputSuggest<ProviderModel> {
       models = await this.list;
       this.onError(null);
     } catch (e) {
-      this.onError(e instanceof Error ? e.message : String(e));
+      this.onError(errorMessage(e));
       return [];
     }
     const q = query.toLowerCase().trim();
@@ -45,7 +44,7 @@ class ModelIdSuggest extends AbstractInputSuggest<ProviderModel> {
     el.addClass("mod-complex");
     const content = el.createDiv("suggestion-content");
     content.createDiv({ cls: "suggestion-title quick-actions-mono", text: model.id });
-    const note = [model.label !== model.id ? model.label : "", model.created ? window.moment(model.created).format("D MMM YYYY") : ""].filter((s) => s);
+    const note = [model.label !== model.id ? model.label : "", model.created ? moment(model.created).format("D MMM YYYY") : ""].filter((s) => s);
     if (note.length) content.createDiv({ cls: "suggestion-note", text: note.join(" · ") });
     if (this.inUse.has(model.id)) el.createDiv("suggestion-aux").createSpan({ cls: "suggestion-flair quick-actions-flair", text: "In use" });
   }
@@ -151,20 +150,19 @@ export class ModelEditModal extends Modal {
         try {
           const ms = await testModel(this.app, this.draft);
           status.empty();
-          const ok = status.createSpan("quick-actions-ok");
-          setIcon(ok.createSpan(), "check");
-          ok.appendText(`Replied in ${formatSeconds(ms)} · ${this.draft.model}`);
+          labelEl(status, "quick-actions-ok", "check", `Replied in ${formatSeconds(ms)} · ${this.draft.model}`);
         } catch (e) {
           status.empty();
-          status.createSpan({ cls: "quick-actions-error", text: e instanceof Error ? e.message : String(e) });
+          status.createSpan({ cls: "quick-actions-error", text: errorMessage(e) });
         } finally {
           b.setDisabled(false);
         }
       }),
     );
 
-    const footer = contentEl.createDiv("quick-actions-footer");
-    footer.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    // Obsidian's button row, which stacks the buttons on a phone.
+    const footer = contentEl.createDiv("modal-button-container quick-actions-form-footer");
+    footer.createEl("button", { text: "Cancel", cls: "mod-cancel" }).addEventListener("click", () => this.close());
     footer.createEl("button", { text: "Save", cls: "mod-cta" }).addEventListener("click", () => this.save());
     this.scope.register(["Mod"], "Enter", () => {
       this.save();

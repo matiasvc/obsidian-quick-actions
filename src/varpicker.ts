@@ -84,7 +84,7 @@ export class VarPicker extends AbstractInputSuggest<VarItem> {
     if (item.unavailable || item === TIP) return;
     const typed = this.typedQuery();
     if (typed) {
-      typed.node.deleteData(typed.start, typed.node.length - typed.start);
+      typed.node.deleteData(typed.start, typed.query.length + 2);
       const range = this.field.editorEl.doc.createRange();
       range.setStart(typed.node, typed.start);
       range.collapse(true);

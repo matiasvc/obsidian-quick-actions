@@ -16,7 +16,7 @@ export const FILTERS: FilterDef[] = [
   { id: "trim", desc: "No spaces or blank lines at either end", example: ["  Paper  ", "Paper"], apply: (v) => v.trim() },
   { id: "first_line", desc: "The first line that has text", example: ["Call the garage ⏎ about the tyres", "Call the garage"], apply: (v) => firstLine(v) },
   { id: "filename", desc: "Safe to use in a file name", example: ["io_uring: why it exists", "io_uring - why it exists"], apply: (v) => safeFileName(v) },
-  { id: "yaml", desc: "Escaped for a double-quoted frontmatter value", example: ['The "what" effect', 'The \\"what\\" effect'], apply: (v) => yamlDouble(v) },
+  { id: "yaml", desc: "Escaped for a double-quoted frontmatter value", example: ['The "what" effect', 'The \\"what\\" effect'], apply: (v) => escapeYaml(v, "double") },
   { id: "link", desc: "A file as a link to it", example: ["Reference Notes/ENet.md", "[[ENet]]"], apply: (v, link) => (v ? link(v) : v) },
 ];
 
@@ -74,14 +74,6 @@ export function pathToLink(path: string): string {
   return noExt === base ? `[[${noExt}]]` : `[[${noExt}|${base}]]`;
 }
 
-export function yamlDouble(text: string): string {
-  return text.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\s*[\r\n]+\s*/g, " ");
-}
-
-export function yamlSingle(text: string): string {
-  return text.replace(/'/g, "''").replace(/\s*[\r\n]+\s*/g, " ");
-}
-
 export type QuoteContext = "double" | "single" | "plain";
 
 // Whether the end of `before` (a frontmatter line up to a reference) sits inside a quoted scalar.
@@ -106,9 +98,10 @@ export function quoteContext(before: string): QuoteContext {
 }
 
 export function escapeYaml(value: string, context: QuoteContext): string {
-  if (context === "double") return yamlDouble(value);
-  if (context === "single") return yamlSingle(value);
-  return value.replace(/\s*[\r\n]+\s*/g, " ");
+  const line = value.replace(/\s*[\r\n]+\s*/g, " ");
+  if (context === "double") return line.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  if (context === "single") return line.replace(/'/g, "''");
+  return line;
 }
 
 // Where the frontmatter block ends (the start of its closing --- line), or -1 when there is none.

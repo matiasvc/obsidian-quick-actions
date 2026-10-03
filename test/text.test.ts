@@ -30,7 +30,7 @@ test("stripCitations cuts OpenAI's inline citation links, and only links", () =>
   assert.equal(stripCitations(json, [{ start_index: start, end_index: json.indexOf('","date') }]), '{"version":"1.14.4","date":"2026-10-01"}');
   assert.equal(stripCitations("Plain words here", [{ start_index: 6, end_index: 11 }]), "Plain words here");
   assert.equal(stripCitations("A ([x](u)) and B ([y](v))", [{ start_index: 2, end_index: 10 }, { start_index: 17, end_index: 25 }]), "A and B");
-  // Offsets as gpt-4.1-mini and gpt-6-luna gave them: code points, so each emoji counts once.
+  // gpt-4.1-mini and gpt-6-luna give offsets in code points, so each emoji counts once.
   const emoji = "🚀😀🎉 Newest is 1.14.4. ([obsidian.md](https://obsidian.md/changelog/))";
   assert.equal(stripCitations(emoji, [{ start_index: 22, end_index: 69 }]), "🚀😀🎉 Newest is 1.14.4.");
 });

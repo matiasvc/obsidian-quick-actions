@@ -16,20 +16,16 @@ export interface PillFieldOptions {
   mono?: boolean;
   placeholder?: string;
   resolve: (name: string) => { type: OutputType; maybe?: boolean } | null; // null = nothing produces it, maybe = an If block may leave it unset
-  onFocus?: () => void;
-  toolsParent?: HTMLElement; // mobile puts the { } button here, in the field's label row
+  onFocus: () => void;
+  toolsParent: HTMLElement; // mobile puts the { } button here, in the field's label row
 }
 
 export interface PillField {
-  el: HTMLElement; // the bordered box
   editorEl: HTMLElement; // where the caret lives
   toolsEl: HTMLElement; // the slot for the { } button
-  getValue(): string;
-  setValue(value: string): void; // rebuilds, so only for external changes
   insertPill(name: string): void;
   addFilterAtCaret(id: string): boolean; // to the reference just before the caret
   focus(): void;
-  isFocused(): boolean;
   pickerOpen: () => boolean; // set by the variable picker
 }
 
@@ -113,8 +109,7 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
     lastValue = value;
   };
 
-  const emitChange = () => {
-    const value = getValue();
+  const emitChange = (value = getValue()) => {
     if (value === lastValue) return;
     lastValue = value;
     opts.onChange(value);
@@ -163,7 +158,7 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
       anchor = editorEl;
     }
     if (anchor !== editorEl) {
-      // The caret sits inside a pill (should not happen): append after it.
+      // A caret inside a pill should not happen. Append after the pill.
       const pill = anchor instanceof HTMLElement ? anchor.closest("[data-pill]") : null;
       offset = pill ? Array.from(editorEl.childNodes).indexOf(pill) + 1 : editorEl.childNodes.length;
       anchor = editorEl;
@@ -217,7 +212,7 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
     }
   };
 
-  // A long value shows its first lines until the field is clicked or "Show all" is.
+  // A long value shows its first lines until the field gets focus or "Show all" is clicked.
   let moreEl: HTMLElement | null = null;
   const unfold = () => {
     el.removeClass("is-folded");
@@ -246,9 +241,10 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
     if (!(evt instanceof InputEvent)) return; // synthetic events come from the picker
     if (evt.isComposing) return;
     pillifyTyped();
-    if (getValue() === "" && editorEl.childNodes.length > 0) editorEl.empty(); // restore the placeholder
+    const value = getValue();
+    if (value === "" && editorEl.childNodes.length > 0) editorEl.empty(); // restore the placeholder
     saveCaret();
-    emitChange();
+    emitChange(value);
   });
   editorEl.addEventListener("beforeinput", (evt) => {
     if (evt.inputType === "insertFromPaste" || evt.inputType === "insertFromDrop") {
@@ -282,7 +278,7 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
   editorEl.addEventListener("focus", () => {
     el.addClass("is-focus");
     unfold();
-    opts.onFocus?.();
+    opts.onFocus();
   });
   editorEl.addEventListener("blur", () => {
     saveCaret();
@@ -292,11 +288,8 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
   render(opts.value);
 
   const field: PillField = {
-    el,
     editorEl,
     toolsEl,
-    getValue,
-    setValue: render,
     insertPill: (name) => insertNodes([pillEl(name), doc.createTextNode(ZWSP)]),
     addFilterAtCaret: (id) => {
       const pill = adjacentPill(-1);
@@ -305,7 +298,6 @@ export function createPillField(parent: HTMLElement, opts: PillFieldOptions): Pi
       return true;
     },
     focus: () => editorEl.focus(),
-    isFocused: () => doc.activeElement === editorEl,
     pickerOpen: () => false,
   };
   return field;
@@ -319,22 +311,16 @@ function mobileField(el: HTMLElement, opts: PillFieldOptions): PillField {
     : el.createEl("input", { cls: "quick-actions-field-editor", attr: { type: "text" } });
   if (opts.placeholder) editorEl.placeholder = opts.placeholder;
   editorEl.value = opts.value;
-  const toolsEl = (opts.toolsParent ?? el).createDiv("quick-actions-field-tools");
-  if (opts.toolsParent) toolsEl.addClass("is-in-label");
+  const toolsEl = opts.toolsParent.createDiv("quick-actions-field-tools is-in-label");
   editorEl.addEventListener("input", () => opts.onChange(editorEl.value));
   editorEl.addEventListener("focus", () => {
     el.addClass("is-focus");
-    opts.onFocus?.();
+    opts.onFocus();
   });
   editorEl.addEventListener("blur", () => el.removeClass("is-focus"));
   return {
-    el,
     editorEl,
     toolsEl,
-    getValue: () => editorEl.value,
-    setValue: (v) => {
-      editorEl.value = v;
-    },
     insertPill: (name) => {
       const start = editorEl.selectionStart ?? editorEl.value.length;
       const end = editorEl.selectionEnd ?? start;
@@ -356,7 +342,6 @@ function mobileField(el: HTMLElement, opts: PillFieldOptions): PillField {
       return true;
     },
     focus: () => editorEl.focus(),
-    isFocused: () => el.doc.activeElement === editorEl,
     pickerOpen: () => false,
   };
 }

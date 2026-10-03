@@ -1,6 +1,6 @@
 import { Notice, ProgressBarComponent } from "obsidian";
 import { ModelConfig, Step } from "./types";
-import { STEP_DEFS, modelOf, replyOutputs, withoutUnavailable } from "./steps";
+import { STEP_DEFS, STEP_GROUPS, modelOf, replyOutputs, withoutUnavailable } from "./steps";
 import { noticeLink } from "./ui";
 
 export interface StepEvent {
@@ -8,8 +8,12 @@ export interface StepEvent {
   step: Step;
 }
 
-// What a step is doing while it runs on its own, or null for a step that is waiting for you.
+// The steps that open a prompt and wait for you.
+const ASKS = new Set(STEP_GROUPS.find((g) => g.id === "ask")?.types);
+
+// What a step is doing while it runs on its own, or null for a step that waits for you.
 function activityOf(step: Step, models: ModelConfig[]): string | null {
+  if (ASKS.has(step.type)) return null;
   if (step.type === "llm") {
     const model = modelOf(step, models)?.name ?? "the model";
     const usable = withoutUnavailable(step, models);
@@ -17,7 +21,8 @@ function activityOf(step: Step, models: ModelConfig[]): string | null {
     if (step.name?.trim()) return `${step.name.trim()} with ${model}${web}`;
     return `Asking ${model} for ${replyOutputs(step).map((o) => o.name).join(", ")}${web}`;
   }
-  return STEP_DEFS[step.type].activity ?? null;
+  const def = STEP_DEFS[step.type];
+  return def.activity ?? def.verb;
 }
 
 // One notice for a whole run: the action, which step is running, its seconds so far and a Cancel

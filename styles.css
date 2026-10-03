@@ -14,15 +14,12 @@
 .quick-actions-prompt-textarea {
   resize: vertical;
 }
-.quick-actions-prompt-footer {
-  margin-top: var(--size-4-3);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--size-4-2);
+/* mod-form would also narrow the prompt to 400px on a desktop. */
+body:not(.is-phone) .modal.quick-actions-prompt.mod-form {
+  max-width: var(--dialog-max-width);
 }
 .quick-actions-prompt-hint {
-  margin-inline-end: auto;
+  align-self: center;
   font-size: var(--font-ui-smaller);
   color: var(--text-faint);
 }
@@ -73,11 +70,10 @@
   gap: var(--size-4-1);
   --icon-size: var(--icon-s);
 }
-.quick-actions-button .quick-actions-icon,
 .quick-actions-button > span {
   display: inline-flex;
 }
-/* Grips show only where dragging works: enableDragReorder marks its container. */
+/* Grips show only where dragging works, which enableDragReorder marks on its container. */
 .quick-actions-grip {
   display: none;
 }
@@ -143,7 +139,6 @@
 .quick-actions-spacer {
   flex: 1;
 }
-.quick-actions-mono input,
 .quick-actions-mono {
   font-family: var(--font-monospace);
   font-size: var(--font-smaller);
@@ -202,16 +197,11 @@
   text-decoration: underline wavy;
   text-underline-offset: 3px;
 }
-.quick-actions-pill.is-mono {
-  font-family: var(--font-monospace);
-  font-size: var(--font-smaller);
-}
 .quick-actions-pill.is-inline {
   display: inline;
   padding: 0 6px;
   line-height: inherit;
   user-select: none;
-  cursor: default;
 }
 .quick-actions-pill.is-pickable,
 .quick-actions-pill.is-inline[data-pill] {
@@ -246,10 +236,14 @@
 }
 
 /* ---- Pill field ---- */
+/* On a desktop the field is a box around a contenteditable. On mobile it is Obsidian's own input or
+   textarea, styled by Obsidian, with the { } button in the label row. */
 .quick-actions-field {
   position: relative;
   text-align: start;
   width: 100%;
+}
+body:not(.is-mobile) .quick-actions-field {
   background: var(--background-primary);
   border: var(--input-border-width) solid var(--background-modifier-border);
   border-radius: var(--input-radius);
@@ -257,7 +251,7 @@
   line-height: 1.55;
   color: var(--text-normal);
 }
-.quick-actions-field.is-focus {
+body:not(.is-mobile) .quick-actions-field.is-focus {
   border-color: var(--background-modifier-border-focus);
   box-shadow: 0 0 0 2px hsla(var(--color-accent-hsl), 0.2);
 }
@@ -265,21 +259,18 @@
   font-family: var(--font-monospace);
   font-size: var(--font-smaller);
 }
-.quick-actions-field-editor {
+div.quick-actions-field-editor {
   padding: var(--size-4-2) var(--size-4-3);
   padding-inline-end: 36px;
   min-height: 64px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   outline: none;
-  width: 100%;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  font: inherit;
-  color: inherit;
 }
-.quick-actions-field.is-single .quick-actions-field-editor {
+.is-mobile textarea.quick-actions-field-editor {
+  width: 100%;
+}
+.quick-actions-field.is-single div.quick-actions-field-editor {
   min-height: 0;
   white-space: pre;
   overflow-x: auto;
@@ -315,22 +306,6 @@
   font-size: var(--font-ui-smaller);
   color: var(--text-accent);
   cursor: var(--cursor);
-}
-/* Mobile: the field is Obsidian's own input, with the { } button in the label row. */
-.is-mobile .quick-actions-field {
-  background: none;
-  border: none;
-  box-shadow: none;
-}
-.is-mobile .quick-actions-field-editor {
-  background: var(--background-modifier-form-field);
-  border: var(--input-border-width) solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
-  padding: var(--size-4-2) var(--size-4-3);
-  min-height: 0;
-}
-.is-mobile .quick-actions-field.is-single .quick-actions-field-editor {
-  border-radius: var(--input-radius);
 }
 .quick-actions-field-tools.is-in-label {
   position: static;
@@ -493,18 +468,11 @@
 body:not(.is-phone) .quick-actions-form .setting-item-control input[type="text"] {
   width: 220px;
 }
-.quick-actions-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--size-4-2);
-  padding-top: var(--size-4-3);
+/* On top of Obsidian's .modal-button-container, whose phone rules win over these. */
+.quick-actions-form-footer {
   margin-top: var(--size-4-2);
+  padding-top: var(--size-4-3);
   border-top: 1px solid var(--background-modifier-border);
-}
-.quick-actions-footer-text {
-  margin-inline-end: auto;
-  font-size: var(--font-ui-small);
 }
 
 /* ---- Action editor ---- */
@@ -621,9 +589,9 @@ body:not(.is-phone) .quick-actions-form .setting-item-control input[type="text"]
 .quick-actions-rail-item.is-active .quick-actions-rail-sub {
   color: var(--text-accent);
 }
-/* After the is-active rules, which it overrides. Only model steps can be in error. */
+/* After the is-active rules, which it overrides. A step is in error when it can't run. */
 .quick-actions-rail-item.is-error .quick-actions-rail-sub,
-.quick-actions-rail-item.is-error .quick-actions-step-icon.is-llm {
+.quick-actions-rail-item.is-error .quick-actions-step-icon {
   color: var(--color-red);
 }
 .quick-actions-rail-sub.is-value {
@@ -987,12 +955,22 @@ body:not(.is-phone) .quick-actions-card-body .setting-item:not(.is-stacked) .qui
   gap: var(--size-4-2);
   margin-top: var(--size-4-3);
 }
-.quick-actions-editor .quick-actions-footer {
-  border-top: none;
-  margin-top: 0;
+.quick-actions-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--size-4-2);
+  padding-top: var(--size-4-3);
+}
+.quick-actions-footer-text {
+  margin-inline-end: auto;
+  font-size: var(--font-ui-small);
 }
 
 /* ---- Phone: one column, the step list or the selected step ---- */
+body:not(.is-phone) .quick-actions-back {
+  display: none;
+}
 .is-phone .quick-actions-editor-head {
   flex-wrap: wrap;
 }

@@ -1,6 +1,6 @@
 import { htmlToMarkdown, requestUrl } from "obsidian";
 
-// A model reads at most this much of a page. Longer pages are cut and say so.
+// The most of a page a Fetch page step keeps. A longer page is cut and ends with a marker saying so.
 const MAX_CHARS = 100_000;
 
 // Page furniture that is never the content. Forms stay, since some sites wrap the whole page in one.

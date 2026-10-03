@@ -20,7 +20,7 @@ test("findQuickTasks reports a missing or disabled plugin", () => {
 
 test("findQuickTasks rejects another API version", () => {
   const found = findQuickTasks(appWith({ "quick-tasks": { api: { ...validApi, version: 1 } } }));
-  assert.deepEqual(found, { error: "Quick Tasks API version 1, this plugin expects 3" });
+  assert.deepEqual(found, { error: "Quick Tasks has API version 1, but this plugin expects 3" });
 });
 
 test("findQuickTasks returns a matching API", () => {

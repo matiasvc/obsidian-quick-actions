@@ -1,16 +1,7 @@
 import { App, requestUrl } from "obsidian";
 import { Effort, LLMOutput, ModelConfig, Page } from "./types";
-import { WEB_MAX_USES } from "./steps";
+import { DEFAULT_MAX_TOKENS, WEB_MAX_USES, providerLabel, unsupported } from "./providers";
 import { stripCitations } from "./text";
-
-export const PROVIDERS: { value: ModelConfig["provider"]; label: string }[] = [
-  { value: "anthropic", label: "Anthropic" },
-  { value: "openai", label: "OpenAI" },
-];
-
-export function providerLabel(provider: ModelConfig["provider"]): string {
-  return PROVIDERS.find((p) => p.value === provider)?.label ?? provider;
-}
 
 interface ApiError {
   error?: { message?: string };
@@ -40,7 +31,12 @@ async function request(provider: ModelConfig["provider"], apiKey: string, path: 
     throw: false,
   });
   if (resp.status >= 400) {
-    const message = (resp.json as ApiError | undefined)?.error?.message;
+    let message: string | undefined;
+    try {
+      message = (JSON.parse(resp.text) as ApiError | null)?.error?.message;
+    } catch {
+      // Not JSON, such as a gateway's error page, so the status has to do.
+    }
     throw new Error(message ?? `${providerLabel(provider)} returned ${resp.status}`);
   }
   return resp.json;
@@ -74,40 +70,21 @@ interface OpenAIReply {
   }[];
 }
 
-// File extensions a model takes as an attachment, with their media types.
-const ATTACHABLE: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  pdf: "application/pdf",
-};
-
-// The media type a model takes a file with this extension as, or undefined when it takes none.
-export function mediaTypeOf(extension: string): string | undefined {
-  const ext = extension.toLowerCase();
-  return Object.prototype.hasOwnProperty.call(ATTACHABLE, ext) ? ATTACHABLE[ext] : undefined;
-}
-
-// The largest request a provider takes. Base64 attachments are nearly all of one.
-export const REQUEST_LIMIT: Record<ModelConfig["provider"], number> = { anthropic: 32 * 1024 * 1024, openai: 50 * 1024 * 1024 };
-
 export interface Attachment {
   name: string;
   mediaType: string;
   data: string; // base64
 }
 
-// What a step sends besides its prompts, in the step's own terms.
+// What a step sends besides its prompts, in the step's own terms. An option the model doesn't take
+// is left out of the request.
 export interface AskOptions {
   webSearch?: boolean;
-  webFetch?: boolean; // Anthropic only
+  webFetch?: boolean;
   effort?: Effort | ""; // "" leaves it to the model
   attachments?: Attachment[];
 }
 
-export const DEFAULT_MAX_TOKENS = 16000;
 const CUT_OFF = "The reply was cut off at the output limit";
 const MAX_CONTINUATIONS = 5;
 
@@ -182,7 +159,8 @@ export async function askModel(app: App, config: ModelConfig, systemPrompt: stri
 }
 
 // A reply with one value per output, through each provider's JSON schema output. Choices become an
-// enum, so the model can only pick from them.
+// enum, so the model can only pick from them. The API may change a choice's case, so a value comes
+// back as the choice is written.
 export async function askModelStructured(
   app: App,
   config: ModelConfig,
@@ -209,7 +187,8 @@ export async function askModelStructured(
   for (const o of outputs) {
     const v = record[o.name];
     if (v === undefined || v === null) throw new Error(`The reply has no ${o.name}`);
-    result[o.name] = (typeof v === "string" ? v : JSON.stringify(v)).trim();
+    const text = (typeof v === "string" ? v : JSON.stringify(v)).trim();
+    result[o.name] = o.choices.find((c) => c.toLowerCase() === text.toLowerCase()) ?? text;
   }
   return { values: result, pages };
 }
@@ -218,6 +197,8 @@ export async function askModelStructured(
 // text, and an empty prompt sends no text part, since an empty one is refused.
 function body(config: ModelConfig, systemPrompt: string, userPrompt: string, opts: AskOptions, schema?: object): Record<string, unknown> {
   const files = opts.attachments ?? [];
+  const effort = unsupported(config, "effort") === undefined ? opts.effort : "";
+  const webFetch = unsupported(config, "webFetch") === undefined && opts.webFetch;
   if (config.provider === "openai") {
     const parts: object[] = files.map((a) => {
       const url = `data:${a.mediaType};base64,${a.data}`;
@@ -231,13 +212,13 @@ function body(config: ModelConfig, systemPrompt: string, userPrompt: string, opt
       input: files.length ? [{ role: "user", content: parts }] : userPrompt,
       store: false,
       ...(config.max_tokens ? { max_output_tokens: config.max_tokens } : {}),
-      ...(opts.effort ? { reasoning: { effort: opts.effort } } : {}),
+      ...(effort ? { reasoning: { effort } } : {}),
       ...(schema ? { text: { format: { type: "json_schema", name: "reply", strict: true, schema } } } : {}),
       ...(opts.webSearch ? { tools: [{ type: "web_search" }], max_tool_calls: WEB_MAX_USES, include: ["web_search_call.action.sources"] } : {}),
     };
   }
   // Anthropic needs an output limit, and takes effort and the schema together in output_config.
-  const outputConfig = { ...(opts.effort ? { effort: opts.effort } : {}), ...(schema ? { format: { type: "json_schema", schema } } : {}) };
+  const outputConfig = { ...(effort ? { effort } : {}), ...(schema ? { format: { type: "json_schema", schema } } : {}) };
   const blocks: object[] = files.map((a) => ({ type: a.mediaType === "application/pdf" ? "document" : "image", source: { type: "base64", media_type: a.mediaType, data: a.data } }));
   if (userPrompt) blocks.push({ type: "text", text: userPrompt });
   // The web tools run as direct calls, since these versions otherwise expect calls from code
@@ -245,7 +226,7 @@ function body(config: ModelConfig, systemPrompt: string, userPrompt: string, opt
   // come from the fetch results and citations can leave a stray cite tag in the reply.
   const tools = [
     ...(opts.webSearch ? [{ type: "web_search_20260318", name: "web_search", max_uses: WEB_MAX_USES, allowed_callers: ["direct"] }] : []),
-    ...(opts.webFetch ? [{ type: "web_fetch_20260318", name: "web_fetch", max_uses: WEB_MAX_USES, allowed_callers: ["direct"] }] : []),
+    ...(webFetch ? [{ type: "web_fetch_20260318", name: "web_fetch", max_uses: WEB_MAX_USES, allowed_callers: ["direct"] }] : []),
   ];
   return {
     model: config.model,
@@ -257,7 +238,7 @@ function body(config: ModelConfig, systemPrompt: string, userPrompt: string, opt
   };
 }
 
-// Sends a one-word request so the settings page can confirm the key and model ID.
+// Asks for a one-word reply so the settings page can confirm the key and model ID.
 export async function testModel(app: App, config: ModelConfig): Promise<number> {
   if (!config.model) throw new Error("No model ID");
   const start = Date.now();

@@ -1,9 +1,7 @@
-import { App, FuzzyMatch, FuzzySuggestModal, Keymap, Modal, Platform, TFile, getIconIds, renderResults, setIcon } from "obsidian";
+import { App, FuzzyMatch, FuzzySuggestModal, Keymap, Modal, Platform, TFile, getIconIds, moment, renderResults, setIcon } from "obsidian";
 import { Action, FileKind } from "./types";
 import { actionUses, loadDraft, recentFiles, saveDraft } from "./recent";
-import { mediaTypeOf } from "./llm";
-
-declare const window: Window & { moment: typeof import("moment") };
+import { mediaTypeOf } from "./providers";
 
 export interface PromptOptions {
   title: string; // the action's name
@@ -26,7 +24,8 @@ export class PromptModal extends Modal {
 
   onOpen(): void {
     const { contentEl, opts } = this;
-    this.modalEl.addClass("quick-actions-prompt");
+    // mod-form lifts Obsidian's button row above a phone's keyboard.
+    this.modalEl.addClass("quick-actions-prompt", "mod-form");
     this.setTitle(opts.title);
     const id = `quick-actions-prompt-${Date.now()}`;
     if (opts.label) contentEl.createEl("label", { cls: "quick-actions-prompt-label", text: opts.label.replace(/:\s*$/, ""), attr: { for: id } });
@@ -36,19 +35,23 @@ export class PromptModal extends Modal {
     const draft = loadDraft(this.app, opts.draftKey);
     this.input.value = draft?.text ?? opts.initial;
 
-    const footer = contentEl.createDiv("quick-actions-prompt-footer");
-    const hint = footer.createDiv("quick-actions-prompt-hint");
-    if (draft) hint.createSpan({ text: `Restored from ${window.moment(draft.at).format("HH:mm")}` });
-    if (!Platform.isMobile) {
-      if (draft) hint.appendText(" · ");
-      if (opts.multiline) {
-        hint.createEl("kbd", { text: Platform.isMacOS ? "⌘" : "Ctrl" });
-        hint.appendText(" ");
+    // Obsidian's button row, which stacks the buttons on a phone. A mod-secondary item sits at the
+    // far left on a desktop and below the buttons on a phone.
+    const footer = contentEl.createDiv("modal-button-container");
+    if (draft || !Platform.isMobile) {
+      const hint = footer.createDiv("quick-actions-prompt-hint mod-secondary");
+      if (draft) hint.createSpan({ text: `Restored from ${moment(draft.at).format("HH:mm")}` });
+      if (!Platform.isMobile) {
+        if (draft) hint.appendText(" · ");
+        if (opts.multiline) {
+          hint.createEl("kbd", { text: Platform.isMacOS ? "⌘" : "Ctrl" });
+          hint.appendText(" ");
+        }
+        hint.createEl("kbd", { text: "Enter" });
+        hint.appendText(" to save");
       }
-      hint.createEl("kbd", { text: "Enter" });
-      hint.appendText(" to save");
     }
-    footer.createEl("button", { text: "Cancel" }).addEventListener("click", () => {
+    footer.createEl("button", { text: "Cancel", cls: "mod-cancel" }).addEventListener("click", () => {
       this.discarded = true;
       this.close();
     });
@@ -136,7 +139,7 @@ export class FilePickerModal extends PickModal<TFile> {
     const content = el.createDiv("suggestion-content");
     renderResults(content.createDiv("suggestion-title"), this.getItemText(file), match.match);
     const folder = file.parent && !file.parent.isRoot() ? `${file.parent.path} · ` : "";
-    content.createDiv({ cls: "suggestion-note", text: `${folder}edited ${window.moment(file.stat.mtime).fromNow()}` });
+    content.createDiv({ cls: "suggestion-note", text: `${folder}edited ${moment(file.stat.mtime).fromNow()}` });
     if (this.recent.has(file.path)) el.createDiv("suggestion-aux").createSpan({ cls: "suggestion-flair quick-actions-flair", text: "Recent" });
   }
 }
@@ -172,9 +175,9 @@ export function openFilePickerModal(app: App, folder: string, label: string, rec
 
 // "used today", "used yesterday" or "used 4 Sep", for when an action last ran.
 function usedLabel(at: number): string {
-  const m = window.moment(at);
-  if (m.isSame(window.moment(), "day")) return "used today";
-  if (m.isSame(window.moment().subtract(1, "day"), "day")) return "used yesterday";
+  const m = moment(at);
+  if (m.isSame(moment(), "day")) return "used today";
+  if (m.isSame(moment().subtract(1, "day"), "day")) return "used yesterday";
   return `used ${m.format("D MMM")}`;
 }
 

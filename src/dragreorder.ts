@@ -7,7 +7,7 @@ export interface DragReorderOptions {
   onReorder: (from: number, to: number) => void; // `to` is the item's final index
 }
 
-// Native HTML5 drag between the direct matches of itemSelector inside container.
+// Native HTML5 drag between the elements inside container that match itemSelector. Does nothing on mobile.
 // Listeners are delegated so re-rendered rows keep working. Returns a disposer.
 // The container gets is-reorderable while dragging works, which is what shows the grips.
 export function enableDragReorder(container: HTMLElement, opts: DragReorderOptions): () => void {

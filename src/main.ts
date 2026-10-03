@@ -1,6 +1,6 @@
 import { Notice, Plugin } from "obsidian";
 import { Action, BranchTest, DEFAULT_ACTION_ICON, LLMOutput, QuickActionsSettings, Step, toSlug } from "./types";
-import { STEP_DEFS, makeStep, newTest } from "./steps";
+import { STEP_DEFS, newTest, stepWith } from "./steps";
 import { repairBlocks } from "./flow";
 import { executeAction } from "./executor";
 import { ActionPickerModal } from "./modals";
@@ -14,7 +14,7 @@ interface Ribbon {
 }
 
 function normalizeStep(s: Step): Step {
-  const step = { ...makeStep(s.type), ...s } as Step;
+  const step = stepWith(s.type, s);
   if (step.type === "llm") step.outputs = (Array.isArray(step.outputs) ? step.outputs : []).map((o: Partial<LLMOutput>) => ({ name: "", desc: "", choices: [], ...o }));
   if (step.type === "if" || step.type === "else_if") step.tests = (Array.isArray(step.tests) ? step.tests : []).map((t: Partial<BranchTest>) => ({ ...newTest(), ...t }));
   return step;

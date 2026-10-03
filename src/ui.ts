@@ -1,8 +1,8 @@
 import { App, Notice, setIcon } from "obsidian";
 import { Action, ModelConfig, OutputType, Step } from "./types";
-import { STEP_DEFS, isModelMissing, stepTitle } from "./steps";
+import { STEP_DEFS, StepEnv, blockedReason, stepTitle } from "./steps";
 import { BUILTINS, InputInfo } from "./variables";
-import { isMarker, stepNumbers } from "./flow";
+import { isMarker } from "./flow";
 import type { PillField } from "./pillfield";
 
 // Small DOM helpers shared by the settings tab and the editors.
@@ -41,7 +41,6 @@ export interface PillLook {
   off?: boolean; // available but not used here
   builtin?: boolean;
   unknown?: boolean; // referenced but nothing produces it
-  mono?: boolean;
   inline?: boolean; // lives inside a pill field
   cls?: string;
 }
@@ -52,14 +51,13 @@ export function renderPill(parent: HTMLElement, name: string, type: OutputType |
   if (look.off) el.addClass("is-off");
   if (look.builtin) el.addClass("is-builtin");
   if (look.unknown) el.addClass("is-unknown");
-  if (look.mono) el.addClass("is-mono");
   if (look.inline) el.addClass("is-inline");
   if (look.cls) el.addClass(look.cls);
   return el;
 }
 
-// `numbers` is stepNumbers(steps), passed in by callers that describe several inputs.
-export function describeInput(input: InputInfo, steps: Step[], models: ModelConfig[], numbers = stepNumbers(steps)): string {
+// `numbers` is stepNumbers(steps), computed once by callers that describe several inputs.
+export function describeInput(input: InputInfo, steps: Step[], models: ModelConfig[], numbers: number[]): string {
   if (input.from < 0) return BUILTINS.find((b) => b.name === input.name)?.source ?? "Always available";
   const maybe = input.maybe ? " · can be empty after its If block" : "";
   return `Step ${numbers[input.from]} · ${stepTitle(steps[input.from], models)} · ${input.type}${maybe}`;
@@ -90,38 +88,38 @@ export function renderInBand(
   return band;
 }
 
-// Remembers which pill field was focused last so the In band can insert into it.
+// Remembers which pill field was focused last so the In band can insert into it, or into the
+// first field when none was.
 export class FieldFocusTracker {
-  fields: PillField[] = [];
+  private first: PillField | null = null;
   current: PillField | null = null;
 
   reset(): void {
-    this.fields = [];
+    this.first = null;
     this.current = null;
   }
 
   register(field: PillField): void {
-    this.fields.push(field);
+    this.first ??= field;
   }
 
   insert(name: string): void {
-    const target = this.current ?? this.fields[0];
-    if (!target) return;
-    target.insertPill(name);
+    (this.current ?? this.first)?.insertPill(name);
   }
 }
 
 // The step chain shown on an action row: chips joined by chevrons.
-export function chainEl(parent: HTMLElement, steps: Step[], models: ModelConfig[]): HTMLElement {
+export function chainEl(parent: HTMLElement, steps: Step[], env: StepEnv): HTMLElement {
   const chain = parent.createDiv("quick-actions-chain");
   // An If block shows as its If chip. Its branches' steps follow in order.
   steps.filter((step) => !isMarker(step)).forEach((step, i) => {
     if (i > 0) iconEl(chain, "chevron-right", "quick-actions-arrow");
-    const chip = labelEl(chain, "quick-actions-chip", STEP_DEFS[step.type].icon, stepTitle(step, models));
+    const chip = labelEl(chain, "quick-actions-chip", STEP_DEFS[step.type].icon, stepTitle(step, env.models));
     if (step.type === "llm") chip.addClass("is-llm");
-    if (isModelMissing(step, models)) {
+    const blocked = blockedReason(step, env);
+    if (blocked) {
       chip.addClass("is-error");
-      chip.setAttr("aria-label", `Model "${step.model}" is not configured`);
+      chip.setAttr("aria-label", blocked);
     }
   });
   if (steps.length === 0) chain.createSpan({ cls: "quick-actions-chip is-add", text: "No steps" });
@@ -164,12 +162,12 @@ export function linkNotice(lines: string[], links: NoticeLink[], duration?: numb
   return notice;
 }
 
-export function emptyEl(parent: HTMLElement, title: string | null, text: string): { el: HTMLElement; row: HTMLElement } {
+// Returns the row for buttons under the text.
+export function emptyEl(parent: HTMLElement, title: string | null, text: string): HTMLElement {
   const el = parent.createDiv(title ? "quick-actions-empty" : "quick-actions-empty is-compact");
   if (title) el.createDiv({ cls: "quick-actions-empty-title", text: title });
   el.createDiv({ cls: "quick-actions-empty-text", text });
-  const row = el.createDiv("quick-actions-empty-row");
-  return { el, row };
+  return el.createDiv("quick-actions-empty-row");
 }
 
 // By id, which survives a rename. The handler still accepts the name's slug for older links.
@@ -187,7 +185,15 @@ export function formatSeconds(ms: number): string {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
-export function truncate(text: string, max = 60): string {
+export function truncate(text: string, max: number): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
   return oneLine.length > max ? oneLine.slice(0, max - 1) + "…" : oneLine;
+}
+
+export function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+export function errorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }

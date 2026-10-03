@@ -3,8 +3,8 @@ import { Action, LLMStep, ModelConfig, generateId, makeAction } from "./types";
 import { uniqueName } from "./variables";
 import QuickActionsPlugin from "./main";
 import { STARTERS } from "./starters";
-import { providerLabel } from "./llm";
-import { UNDO_NOTICE_MS, chainEl, copyUri, emptyEl, linkNotice, textButton } from "./ui";
+import { providerLabel } from "./providers";
+import { UNDO_NOTICE_MS, chainEl, copyUri, emptyEl, linkNotice, plural, textButton } from "./ui";
 import { showRowMenu } from "./menus";
 import { enableDragReorder, moveItem } from "./dragreorder";
 import { ModelEditModal } from "./model-editor";
@@ -44,20 +44,20 @@ export class QuickActionsSettingTab extends PluginSettingTab {
       // eslint-disable-next-line obsidianmd/ui/sentence-case -- URI is an acronym
       .setDesc("Each action is a chain of steps and runs from the palette, a hotkey, the ribbon, the launcher or its URI.")
       .addButton((b) => {
-        b.setButtonText("Add action").onClick(() => this.editAction(null, makeAction("New action")));
+        b.setButtonText("Add action").onClick(() => this.editAction(makeAction("New action")));
         if (actions.length === 0) b.setCta();
       });
 
     const list = containerEl.createDiv();
     actions.forEach((action, i) => this.actionRow(list, action, i));
     if (actions.length === 0) {
-      const { row } = emptyEl(
+      const row = emptyEl(
         containerEl,
         "No actions yet",
         "An action asks you for something, can hand it to a model, and writes the result into your vault. Start from scratch, or from one of these and change what you like.",
       );
       for (const starter of STARTERS) {
-        textButton(row, starter.icon, starter.title, () => this.editAction(null, starter.make())).setAttr("aria-label", starter.desc);
+        textButton(row, starter.icon, starter.title, () => this.editAction(starter.make())).setAttr("aria-label", starter.desc);
       }
     }
     this.disposeDrag = enableDragReorder(list, {
@@ -75,7 +75,7 @@ export class QuickActionsSettingTab extends PluginSettingTab {
       // eslint-disable-next-line obsidianmd/ui/sentence-case -- API and Keychain
       .setDesc("Ask a model steps pick one of these. API keys live in Settings › Keychain and are referenced by name.")
       .addButton((b) =>
-        b.setButtonText("Add model").onClick(() => this.editModel(null, { name: "", provider: "anthropic", model: "", secret_id: "" })),
+        b.setButtonText("Add model").onClick(() => this.editModel({ name: "", provider: "anthropic", model: "", secret_id: "" })),
       );
     models.forEach((model, i) => this.modelRow(containerEl, model, i));
     if (models.length === 0) emptyEl(containerEl, null, "No models yet. Only needed for Ask a model steps.");
@@ -93,8 +93,8 @@ export class QuickActionsSettingTab extends PluginSettingTab {
     const grip = createDiv("quick-actions-grip");
     setIcon(grip, "grip-vertical");
     row.settingEl.prepend(grip);
-    chainEl(row.descEl, action.steps, models);
-    openOnClick(row, () => this.editAction(action, action));
+    chainEl(row.descEl, action.steps, { app: this.app, models });
+    openOnClick(row, () => this.editAction(action));
     row.addExtraButton((b) =>
       b
         .setIcon("ellipsis-vertical")
@@ -131,7 +131,7 @@ export class QuickActionsSettingTab extends PluginSettingTab {
     row.settingEl.addClass("quick-actions-row");
     row.descEl.appendText(`${providerLabel(model.provider)} · ${model.model || "no model ID"} · key `);
     row.descEl.createSpan({ cls: "quick-actions-var", text: model.secret_id || "none" });
-    openOnClick(row, () => this.editModel(model, model));
+    openOnClick(row, () => this.editModel(model));
     row.addExtraButton((b) =>
       b
         .setIcon("ellipsis-vertical")
@@ -156,15 +156,16 @@ export class QuickActionsSettingTab extends PluginSettingTab {
             },
             onDelete: () => {
               const users = this.stepsUsing(model.name).length;
-              this.deleteItem(models, index, `Deleted "${model.name}"${users ? `. ${users === 1 ? "1 step uses" : `${users} steps use`} it and will stop until it gets another model` : ""}`);
+              this.deleteItem(models, index, `Deleted "${model.name}"${users ? `. ${plural(users, "step uses it and stops until it gets", "steps use it and stop until they get")} another model` : ""}`);
             },
           }),
         ),
     );
   }
 
-  // Opens the editor on a draft. `existing` is null for a new item, which is only stored on Save.
-  private editAction(existing: Action | null, source: Action): void {
+  // Opens the editor on a draft of `source`. A new item, one not in the list yet, is only stored on Save.
+  private editAction(source: Action): void {
+    const existing = this.plugin.settings.actions.includes(source) ? source : null;
     new ActionEditModal(this.app, this.plugin, source, (result) => {
       if (existing) Object.assign(existing, result);
       else this.plugin.settings.actions.push(result);
@@ -173,13 +174,14 @@ export class QuickActionsSettingTab extends PluginSettingTab {
   }
 
   // A renamed model takes its steps along, so none of them stops on a missing model.
-  private editModel(existing: ModelConfig | null, source: ModelConfig): void {
+  private editModel(source: ModelConfig): void {
+    const existing = this.plugin.settings.models.includes(source) ? source : null;
     const others = this.plugin.settings.models.filter((m) => m !== existing);
     new ModelEditModal(this.app, source, existing === null, others, (result) => {
       if (existing) {
         const users = existing.name !== result.name ? this.stepsUsing(existing.name) : [];
         for (const step of users) step.model = result.name;
-        if (users.length) new Notice(`Renamed ${existing.name} to ${result.name} in ${users.length === 1 ? "1 step" : `${users.length} steps`}`);
+        if (users.length) new Notice(`Renamed ${existing.name} to ${result.name} in ${plural(users.length, "step", "steps")}`);
         Object.assign(existing, result);
       } else {
         this.plugin.settings.models.push(result);

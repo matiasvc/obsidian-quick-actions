@@ -42,13 +42,23 @@ test("a missing section is an error", () => {
 });
 
 test("headings: insert matches the whole line, open matches the text at any level", () => {
-  const lines = ["# Summary", "## C#", "### Notes ###", "# Description"];
-  assert.equal(findHeadingLine(lines, "## C#", false), 1);
-  assert.equal(findHeadingLine(lines, "# C#", false), -1);
-  assert.equal(findHeadingLine(lines, "## C#", true), 1);
-  assert.equal(findHeadingLine(lines, "Notes", true), 2);
-  assert.equal(findHeadingLine(lines, "## Description", true), 3);
-  assert.equal(findHeadingLine(lines, "Missing", true), -1);
+  const text = "# Summary\n## C#\n### Notes ###\n# Description";
+  assert.equal(spot(text, "## C#", "beginning").at, 2);
+  assert.deepEqual(findInsertSpot(text, "# C#", "beginning"), { error: 'Section "# C#" not found' });
+  const lines = text.split("\n");
+  assert.equal(findHeadingLine(lines, "## C#"), 1);
+  assert.equal(findHeadingLine(lines, "Notes"), 2);
+  assert.equal(findHeadingLine(lines, "## Description"), 3);
+  assert.equal(findHeadingLine(lines, "Missing"), -1);
+});
+
+test("a # line in fenced code or frontmatter is not a heading", () => {
+  const note = "# Log\n- 09:00\n```bash\n# rebuild\nmake\n```\n- 10:00\n# Notes\n";
+  assert.equal(insert(note, "# Log", "end", "- 11:00"), note.replace("- 10:00\n", "- 10:00\n- 11:00\n"));
+  const fenced = "~~~\n# Notes\n~~~\n\n# Notes\nN";
+  assert.equal(spot(fenced, "# Notes", "beginning").at, 5);
+  assert.equal(findHeadingLine(fenced.split("\n"), "Notes"), 4);
+  assert.equal(findHeadingLine("---\n# not a heading\n---\n# Heading".split("\n"), "not a heading"), -1);
 });
 
 test("the preview shows the lines around the new one", () => {

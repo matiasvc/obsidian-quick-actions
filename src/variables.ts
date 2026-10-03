@@ -1,8 +1,8 @@
 // Pure functions over the {{name|filter}} variable grammar: what is available at a
 // step, what a step uses, renaming an output, and resolving templates.
-import { OutputType, Step } from "./types";
+import { OutputType, Step, StepType } from "./types";
 import { STEP_DEFS, ResolveMode, outputsOf, setOutputName, templatedFields } from "./steps";
-import { applyFilter, escapeYaml, frontmatterEnd, isFilter, notePath, quoteContext, safeFileName } from "./text";
+import { applyFilter, escapeYaml, frontmatterEnd, notePath, quoteContext, safeFileName } from "./text";
 import { blockOfMarker, exclusive } from "./flow";
 
 // {{name}} or {{name|filter|filter}}. Every reader of templates goes through this.
@@ -29,7 +29,8 @@ export interface BuiltinInfo extends InputInfo {
   cleanInPath: boolean; // a path makes it safe for a file name
 }
 
-export const BUILTINS: readonly BuiltinInfo[] = [
+// A run computes each of these in builtinVars, whose type makes a missing one an error.
+export const BUILTINS = [
   { name: "date", type: "text", from: -1, source: "Today", sample: "2026-09-04", cleanInPath: false },
   { name: "time", type: "text", from: -1, source: "Now", sample: "13:52", cleanInPath: true },
   { name: "timestamp", type: "text", from: -1, source: "Now, for file names", sample: "20260904135200", cleanInPath: false },
@@ -37,7 +38,9 @@ export const BUILTINS: readonly BuiltinInfo[] = [
   { name: "clipboard", type: "text", from: -1, source: "What you last copied", sample: "https://example.com/article", cleanInPath: true },
   { name: "active_note", type: "file", from: -1, source: "The note you were in", sample: "Logs/Work Focus.md", cleanInPath: false },
   { name: "active_title", type: "text", from: -1, source: "The name of the note you were in", sample: "Work Focus", cleanInPath: true },
-];
+] as const satisfies readonly BuiltinInfo[];
+
+export type BuiltinName = (typeof BUILTINS)[number]["name"];
 
 export function isBuiltin(name: string): boolean {
   return BUILTINS.some((b) => b.name === name);
@@ -73,11 +76,11 @@ export function parseRefs(template: string): VarRef[] {
   return refs;
 }
 
-// The name a template refers to when the whole template is one reference without filters.
-function soleRef(template: string): string | null {
+// The reference a template is made of when it is nothing but one reference, filters included.
+export function soleRef(template: string): VarRef | null {
   const whole = template.trim();
   const refs = parseRefs(whole);
-  return refs.length === 1 && refs[0].length === whole.length && refs[0].filters.length === 0 ? refs[0].name : null;
+  return refs.length === 1 && refs[0].length === whole.length ? refs[0] : null;
 }
 
 export function producedNames(steps: Step[]): string[] {
@@ -97,7 +100,8 @@ const sourcesOf = (input: InputInfo): number[] => input.sources ?? [input.from];
 // Built-ins plus what the steps before step i produce. When two earlier steps produce the same
 // name, the nearest wins. A step in a branch sees only its own branch, not the ones beside it, and
 // the tests of an Else if see what came before its block. After a block, a name its branches set
-// is there, marked maybe unless every branch sets it and one of them always runs.
+// is there, marked maybe unless every branch sets it and one always runs, or it was certain before
+// the block.
 export function availableInputs(steps: Step[], i: number): InputInfo[] {
   const s = steps[i];
   if (s?.type === "else_if" || s?.type === "else") i = blockOfMarker(steps, i)?.start ?? i;
@@ -150,12 +154,8 @@ function mergeBranches(frame: Frame): Scope {
   return merged;
 }
 
-export function referencedNames(text: string): string[] {
-  return [...new Set(parseRefs(text).map((r) => r.name))];
-}
-
 export function usedInputs(step: Step): string[] {
-  return [...new Set(templatedFields(step).flatMap((f) => referencedNames(f.value)))];
+  return [...new Set(templatedFields(step).flatMap((f) => parseRefs(f.value).map((r) => r.name)))];
 }
 
 // Every name the action's templates read, so a run only reads the clipboard when something uses it.
@@ -163,21 +163,17 @@ export function namesUsedBy(steps: Step[]): Set<string> {
   return new Set(steps.flatMap(usedInputs));
 }
 
-// Unknown filter names in a template.
-export function unknownFilters(template: string): string[] {
-  return [...new Set(parseRefs(template).flatMap((r) => r.filters.filter((f) => !isFilter(f))))];
-}
-
 // Names whose values a path makes safe for a file name: the outputs of steps that produce typed
 // or generated text, and the built-ins marked for it. A name some step produces as a file is left
 // out, and so is a Set a value whose value is just such a file, since cleaning would break the path.
 export function cleanedInPaths(steps: Step[]): Set<string> {
-  const names = new Set(BUILTINS.filter((b) => b.cleanInPath).map((b) => b.name));
-  const files = new Set(BUILTINS.filter((b) => b.type === "file").map((b) => b.name));
+  const names = new Set<string>(BUILTINS.filter((b) => b.cleanInPath).map((b) => b.name));
+  const files = new Set<string>(BUILTINS.filter((b) => b.type === "file").map((b) => b.name));
   for (const s of steps) {
     for (const o of outputsOf(s)) if (o.type === "file") files.add(o.name);
+    // A filter such as link turns the file into other text, which a path cleans.
     const ref = s.type === "set_value" ? soleRef(s.value) : null;
-    if (s.type === "set_value" && ref !== null && files.has(ref)) files.add(s.variable);
+    if (s.type === "set_value" && ref !== null && ref.filters.length === 0 && files.has(ref.name)) files.add(s.variable);
     else if (STEP_DEFS[s.type].cleanInPath) for (const o of outputsOf(s)) names.add(o.name);
   }
   for (const f of files) names.delete(f);
@@ -203,9 +199,14 @@ export function consumersOf(steps: Step[], producer: number, name?: string): num
 }
 
 // Whether two steps may produce the same name. A Set a value is there to replace a value, and
-// steps in different branches of a block never both run.
-function mayShareName(steps: Step[], a: number, b: number): boolean {
-  return steps[a].type === "set_value" || steps[b].type === "set_value" || exclusive(steps, a, b);
+// steps in different branches of a block never both run. `aType` asks for step a as another type.
+function mayShareName(steps: Step[], a: number, b: number, aType: StepType = steps[a].type): boolean {
+  return aType === "set_value" || steps[b].type === "set_value" || exclusive(steps, a, b);
+}
+
+// The names step i must not produce once it is of `type`: those of the steps it can't share a name with.
+export function takenNames(steps: Step[], i: number, type: StepType): string[] {
+  return steps.flatMap((s, j) => (j === i || mayShareName(steps, i, j, type) ? [] : outputsOf(s).map((o) => o.name)));
 }
 
 // For each step, the steps it reads values from. Built-ins are left out.
@@ -328,15 +329,12 @@ function substitute(ref: VarRef, vars: Record<string, string>, opts: ResolveOpti
 // Unknown names are left verbatim so a typo is visible in the result. A path also comes back as
 // the file it names, normalized and with ".md" unless it names another file that exists.
 export function resolveTemplate(template: string, vars: Record<string, string>, opts: ResolveOptions = {}, mode: ResolveMode = "plain"): string {
-  const finish = finisher(template, mode, opts);
-  const text = template.replace(VAR_RE, (match: string, name: string, chain: string, index: number) =>
-    name in vars ? substitute({ name, filters: splitChain(chain), index, length: match.length }, vars, opts, finish) : match,
-  );
+  const text = resolveSegments(template, vars, opts, mode).map((s) => s.text).join("");
   return mode === "path" ? notePath(text, opts.exists) : text;
 }
 
-// Same substitution as resolveTemplate, split into segments so a renderer can mark each
-// substituted value. Unknown names come back as plain text, and a path is not normalized.
+// The substitution split into segments, so a renderer can mark each substituted value. Unknown
+// names come back as plain text, and a path is not normalized.
 export function resolveSegments(
   template: string,
   vars: Record<string, string>,

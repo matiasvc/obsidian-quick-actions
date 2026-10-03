@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Platform, Setting, setIcon } from "obsidian";
+import { App, Modal, Notice, Setting, setIcon } from "obsidian";
 import { Action, ElseIfStep, IfStep, LLMOutput, Step, StepType, TestOp } from "./types";
 import QuickActionsPlugin from "./main";
 import {
@@ -6,7 +6,9 @@ import {
   FieldDef,
   ResolveMode,
   STEP_DEFS,
+  StepEnv,
   StepOutput,
+  blockedReason,
   convertStep,
   freshOutputs,
   isModelMissing,
@@ -17,6 +19,7 @@ import {
   outputsOf,
   stepLabel,
   stepTitle,
+  templatedFields,
   withoutUnavailable,
 } from "./steps";
 import {
@@ -25,7 +28,6 @@ import {
   blockOfMarker,
   blocksOf,
   branchEnd,
-  exclusive,
   isMarker,
   moveSteps,
   moveTo,
@@ -38,15 +40,17 @@ import {
 } from "./flow";
 import {
   BUILTINS,
+  InputInfo,
   availableInputs,
   consumersOf,
   copySteps,
+  formatRef,
   producedNames,
   renameOutput,
   resolveSegments,
   resolveStep,
   scopeBefore,
-  uniqueName,
+  takenNames,
   usedInputs,
 } from "./variables";
 import { InsertPreview } from "./insert";
@@ -55,19 +59,14 @@ import { RunProgress } from "./progress";
 import { FolderSuggest } from "./suggest";
 import { createPillField } from "./pillfield";
 import { VarItem, attachVarPicker } from "./varpicker";
-import { FieldFocusTracker, copyUri, describeInput, formatSeconds, iconButton, iconEl, renderInBand, renderPill, textButton, truncate } from "./ui";
+import { FieldFocusTracker, copyUri, describeInput, formatSeconds, iconButton, iconEl, plural, renderInBand, renderPill, textButton, truncate } from "./ui";
 import { MenuEntry, showAddStepMenu, showMenu, showRowMenu } from "./menus";
-import { findQuickTasks } from "./quicktasks";
 import { enableDragReorder, moveItem } from "./dragreorder";
 import { IconPickerModal } from "./modals";
 
 // A notice for values that later steps read and no step produces any more.
 function lostSource(names: string[]): string {
-  return `Later steps still use ${names.map((n) => `{{${n}}}`).join(", ")} and now need a new source.`;
-}
-
-function plural(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`;
+  return `Later steps still use ${names.map((n) => formatRef(n)).join(", ")} and now need a new source.`;
 }
 
 export class ActionEditModal extends Modal {
@@ -79,7 +78,7 @@ export class ActionEditModal extends Modal {
   // Phones show one column: the step list, or the selected step with a back button.
   private paneOpen = false;
   private run: RunResult | null = null;
-  // Bumped whenever the steps change, so a test run still going knows its results are stale.
+  // Bumped by every structural change (clearRun), so a test run still going knows its results are stale.
   private runGen = 0;
   private view: "edit" | "run" = "edit";
   private running = false;
@@ -90,6 +89,12 @@ export class ActionEditModal extends Modal {
   private railEl: HTMLElement;
   private paneEl: HTMLElement;
   private footerEl: HTMLElement;
+  // One per step, so a keystroke in a step's name or tests redraws its row and not the whole rail.
+  private railRows: HTMLElement[] = [];
+  // What the selected step can use. Only a change that redraws the pane can change it.
+  private paneInputs: InputInfo[] = [];
+  // The names the In band shows as used, so a field edit redraws it only when they change.
+  private inBandUsed = "";
   private disposeDrag: (() => void) | null = null;
 
   constructor(app: App, plugin: QuickActionsPlugin, source: Action, onSave: (action: Action) => void) {
@@ -176,6 +181,10 @@ export class ActionEditModal extends Modal {
     return this.plugin.settings.models;
   }
 
+  private get env(): StepEnv {
+    return { app: this.app, models: this.models };
+  }
+
   private resultFor(index: number): StepResult | undefined {
     return this.run?.steps.find((r) => r.index === index);
   }
@@ -190,30 +199,33 @@ export class ActionEditModal extends Modal {
   private renderHead(): void {
     const head = this.headEl;
     head.empty();
-    const iconBtn = head.createDiv({ cls: "clickable-icon quick-actions-action-icon", attr: { "aria-label": "Icon and ribbon button" } });
-    setIcon(iconBtn, this.draft.icon);
-    iconBtn.addEventListener("click", (evt) =>
-      showMenu(
-        [
-          {
-            title: "Change icon…",
-            icon: "shapes",
-            click: () =>
-              new IconPickerModal(this.app, (icon) => {
-                this.draft.icon = icon;
-                this.renderHead();
-              }).open(),
-          },
-          {
-            title: "Show in the ribbon",
-            desc: "A button in the left sidebar that runs this action",
-            icon: "panel-left",
-            checked: !!this.draft.ribbon,
-            click: () => (this.draft.ribbon = !this.draft.ribbon),
-          },
-        ],
-        evt,
-      ),
+    iconButton(
+      head,
+      this.draft.icon,
+      "Icon and ribbon button",
+      (evt) =>
+        showMenu(
+          [
+            {
+              title: "Change icon…",
+              icon: "shapes",
+              click: () =>
+                new IconPickerModal(this.app, (icon) => {
+                  this.draft.icon = icon;
+                  this.renderHead();
+                }).open(),
+            },
+            {
+              title: "Show in the ribbon",
+              desc: "A button in the left sidebar that runs this action",
+              icon: "panel-left",
+              checked: !!this.draft.ribbon,
+              click: () => (this.draft.ribbon = !this.draft.ribbon),
+            },
+          ],
+          evt,
+        ),
+      "quick-actions-action-icon",
     );
     const name = head.createEl("input", { type: "text", cls: "quick-actions-name", placeholder: "Action name" });
     name.value = this.draft.name;
@@ -227,14 +239,10 @@ export class ActionEditModal extends Modal {
         iconEl(bar, "check");
         const stopped = this.run.status === "stopped" ? `Stopped at step ${last}` : `Ran ${last === 1 ? "step 1" : `steps 1–${last}`}`;
         bar.appendText(`${stopped} · ${formatSeconds(this.run.ms)} · nothing written`);
-      } else if (this.run.status === "cancelled") {
-        bar.addClass("is-failed");
-        iconEl(bar, "x");
-        bar.appendText(`Cancelled at step ${last}`);
       } else {
         bar.addClass("is-failed");
         iconEl(bar, "x");
-        bar.appendText(`Step ${last} failed`);
+        bar.appendText(this.run.status === "cancelled" ? `Cancelled at step ${last}` : `Step ${last} failed`);
       }
     }
     if (this.steps.length > 0) {
@@ -259,27 +267,7 @@ export class ActionEditModal extends Modal {
     }
     const numbers = stepNumbers(this.steps);
     const blocks = blocksOf(this.steps);
-    this.steps.forEach((step, i) => {
-      const depth = [...blocks.values()].filter((b) => b.start < i && i < b.end).length;
-      const row = rail.createDiv("quick-actions-rail-item");
-      row.style.setProperty("--depth", String(depth));
-      if (depth > 0) row.addClass("is-in-block");
-      if (isMarker(step)) {
-        this.railMarker(row, step, i, blocks);
-        return;
-      }
-      if (i === this.selected) row.addClass("is-active");
-      if (step.type === "if") row.addClass("is-block-head");
-      row.createSpan({ cls: "quick-actions-num", text: String(numbers[i]) });
-      const icon = row.createSpan("quick-actions-step-icon");
-      setIcon(icon, STEP_DEFS[step.type].icon);
-      if (step.type === "llm") icon.addClass("is-llm");
-      if (step.type === "if") icon.addClass("is-if");
-      const text = row.createDiv("quick-actions-rail-text");
-      text.createDiv({ cls: "quick-actions-rail-title", text: stepTitle(step, this.models) });
-      this.railSub(text, step, i, row, blocks.get(i));
-      row.addEventListener("click", () => this.select(i));
-    });
+    this.railRows = this.steps.map((_, i) => rail.appendChild(this.railRow(i, numbers, blocks)));
     const add = rail.createDiv("quick-actions-rail-add");
     const btn = textButton(add, "plus", "Add step", () => showAddStepMenu(btn, (type) => this.addStep(type)), this.steps.length === 0);
     this.disposeDrag = enableDragReorder(rail, {
@@ -287,6 +275,39 @@ export class ActionEditModal extends Modal {
       canDrag: (item) => !item.hasClass("is-fixed"),
       onReorder: (from, to) => this.moveStep(from, to),
     });
+  }
+
+  private railRow(i: number, numbers: number[], blocks: Map<number, Block>): HTMLElement {
+    const step = this.steps[i];
+    const depth = [...blocks.values()].filter((b) => b.start < i && i < b.end).length;
+    const row = createDiv("quick-actions-rail-item");
+    row.style.setProperty("--depth", String(depth));
+    if (depth > 0) row.addClass("is-in-block");
+    if (isMarker(step)) {
+      this.railMarker(row, step, i, blocks);
+      return row;
+    }
+    if (i === this.selected) row.addClass("is-active");
+    if (step.type === "if") row.addClass("is-block-head");
+    row.createSpan({ cls: "quick-actions-num", text: String(numbers[i]) });
+    const icon = row.createSpan("quick-actions-step-icon");
+    setIcon(icon, STEP_DEFS[step.type].icon);
+    if (step.type === "llm") icon.addClass("is-llm");
+    if (step.type === "if") icon.addClass("is-if");
+    const text = row.createDiv("quick-actions-rail-text");
+    text.createDiv({ cls: "quick-actions-rail-title", text: stepTitle(step, this.models) });
+    this.railSub(text, step, i, row, blocks.get(i));
+    row.addEventListener("click", () => this.select(i));
+    return row;
+  }
+
+  // Redraws one row after an edit that changes only that step's title or second line.
+  private refreshRailRow(i: number): void {
+    const old = this.railRows[i];
+    if (!old) return;
+    const row = this.railRow(i, stepNumbers(this.steps), blocksOf(this.steps));
+    old.replaceWith(row);
+    this.railRows[i] = row;
   }
 
   // A block's divider or bottom edge. Neither can be dragged, but steps can be dropped next to
@@ -312,9 +333,10 @@ export class ActionEditModal extends Modal {
       return;
     }
     if (!this.run) {
-      if (isModelMissing(step, this.models)) {
+      const blocked = blockedReason(step, this.env);
+      if (blocked) {
         row.addClass("is-error");
-        parent.createDiv({ cls: "quick-actions-rail-sub", text: step.model ? `Model "${step.model}" is not configured` : "No models are configured" });
+        parent.createDiv({ cls: "quick-actions-rail-sub", text: blocked });
         return;
       }
       const model = modelOf(step, this.models);
@@ -328,7 +350,7 @@ export class ActionEditModal extends Modal {
         iconEl(sub, "check");
         const text = result.outputs.length === 1 ? `“${truncate(result.outputs[0].value, 40)}”` : `${result.outputs.length} values`;
         const value = sub.createSpan({ cls: "quick-actions-rail-value", text });
-        if (STEP_DEFS[step.type].group === "generate") value.appendText(` · ${formatSeconds(result.ms)}`);
+        if (step.type === "llm" || step.type === "fetch_page") value.appendText(` · ${formatSeconds(result.ms)}`);
       } else if (result.status === "ok" || result.status === "stopped") {
         iconEl(sub, "check");
         sub.createSpan({ cls: "quick-actions-rail-value", text: result.note ?? "Done" });
@@ -382,14 +404,20 @@ export class ActionEditModal extends Modal {
     const i = this.selected;
     const step = this.steps[i];
     const def = STEP_DEFS[step.type];
+    this.paneInputs = availableInputs(this.steps, i);
 
     const head = pane.createDiv("quick-actions-pane-head");
-    if (Platform.isPhone) {
-      iconButton(head, "arrow-left", "Back to steps", () => {
+    // Shown only on a phone, by CSS.
+    iconButton(
+      head,
+      "arrow-left",
+      "Back to steps",
+      () => {
         this.paneOpen = false;
         this.modalEl.removeClass("is-pane-open");
-      });
-    }
+      },
+      "quick-actions-back",
+    );
     head.createSpan({ cls: "quick-actions-num", text: String(stepNumbers(this.steps)[i]) });
     if (step.type === "if") {
       head.createSpan({ cls: "quick-actions-step-kind", text: def.verb });
@@ -409,7 +437,7 @@ export class ActionEditModal extends Modal {
     stepName.addEventListener("input", () => {
       if (stepName.value.trim()) step.name = stepName.value;
       else delete step.name;
-      this.renderRail();
+      this.refreshRailRow(i);
     });
     const result = this.resultFor(i);
     if (result) {
@@ -436,16 +464,8 @@ export class ActionEditModal extends Modal {
     const inBand = card.createDiv();
     this.renderInBand(inBand, i);
     const body = card.createDiv("quick-actions-card-body");
-    if (step.type === "quick_task") {
-      const found = findQuickTasks(this.app);
-      if ("error" in found) {
-        const warning = new Setting(body)
-          // eslint-disable-next-line obsidianmd/ui/sentence-case -- Quick Tasks is a plugin name
-          .setName("Needs the Quick Tasks plugin")
-          .setDesc(`${found.error}. Enable it and this step opens its add box and hands the new task note down.`);
-        warning.settingEl.addClass("is-warning");
-      }
-    }
+    const blocked = blockedReason(step, this.env);
+    if (blocked) new Setting(body).setName("This step can't run").setDesc(blocked).settingEl.addClass("is-warning");
     for (const f of def.fields) {
       if (f.showIf && !f.showIf(step)) continue;
       this.renderField(body, step, f, i, inBand);
@@ -494,7 +514,7 @@ export class ActionEditModal extends Modal {
       top.createSpan({ cls: "quick-actions-hint", text: plural(count, "step", "steps") });
       if (k > 0) iconButton(top, "x", "Remove this branch. Its steps move below the block.", () => this.removeBranchAt(m));
       if (marker.type === "if" || marker.type === "else_if") {
-        marker.tests.forEach((_, n) => this.renderTest(row, marker, n, i, inBand));
+        marker.tests.forEach((_, n) => this.renderTest(row, marker, m, n, i, inBand));
         textButton(row.createDiv("quick-actions-branch-add"), "plus", "Add test", () => {
           marker.tests.push(newTest());
           this.renderRail();
@@ -520,15 +540,16 @@ export class ActionEditModal extends Modal {
     band.createSpan({ cls: "quick-actions-hint", text: hint });
   }
 
-  // One test of a branch: the value, how it is tested, and what it is compared with.
-  private renderTest(parent: HTMLElement, marker: IfStep | ElseIfStep, n: number, i: number, inBand: HTMLElement): void {
+  // One test of a branch: the value, how it is tested, and what it is compared with. `m` is the
+  // index of the branch's If or Else if, whose rail row shows its first test.
+  private renderTest(parent: HTMLElement, marker: IfStep | ElseIfStep, m: number, n: number, i: number, inBand: HTMLElement): void {
     const test = marker.tests[n];
     const line = parent.createDiv("quick-actions-test");
     const field = (value: string, placeholder: string, write: (v: string) => void) =>
-      this.pillField(line, line, i, { value, multiline: false, placeholder }, (v) => {
+      this.pillField(line, line, { value, multiline: false, placeholder }, (v) => {
         write(v);
-        this.renderInBand(inBand, i);
-        this.renderRail();
+        this.refreshInBand(inBand, i);
+        this.refreshRailRow(m);
       });
     field(test.value, "Type {{ for a value", (v) => (test.value = v));
     const op = line.createEl("select", { cls: "dropdown" });
@@ -592,17 +613,22 @@ export class ActionEditModal extends Modal {
 
   private renderInBand(container: HTMLElement, i: number): void {
     container.empty();
-    const inputs = availableInputs(this.steps, i);
-    const used = new Set(usedInputs(this.steps[i]));
+    const used = usedInputs(this.steps[i]);
+    this.inBandUsed = used.join("|");
     const numbers = stepNumbers(this.steps);
     renderInBand(
       container,
-      inputs,
-      used,
+      this.paneInputs,
+      new Set(used),
       (input) => describeInput(input, this.steps, this.models, numbers),
       (name) => this.tracker.insert(name),
       i === 0 ? "first step, nothing from above yet" : undefined,
     );
+  }
+
+  // A field edit changes only which values the step uses, so the band is redrawn when those change.
+  private refreshInBand(container: HTMLElement, i: number): void {
+    if (usedInputs(this.steps[i]).join("|") !== this.inBandUsed) this.renderInBand(container, i);
   }
 
   private renderField(body: HTMLElement, step: Step, f: FieldDef, i: number, inBand: HTMLElement): void {
@@ -612,7 +638,7 @@ export class ActionEditModal extends Modal {
     const reason = f.unavailable?.(step, this.models);
     const desc = reason ?? f.desc;
     if (desc) setting.setDesc(desc);
-    const edited = () => this.renderInBand(inBand, i);
+    const edited = () => this.refreshInBand(inBand, i);
     switch (f.kind) {
       case "text":
         setting.addText((t) =>
@@ -627,10 +653,7 @@ export class ActionEditModal extends Modal {
           t
             .setDisabled(reason !== undefined)
             .setValue(Boolean(record[f.key]))
-            .onChange((v) => {
-              const changed = this.changeOutputs(i, step, () => (record[f.key] = v));
-              if (!changed && STEP_DEFS[step.type].fields.some((other) => other.showIf)) this.renderPane();
-            }),
+            .onChange((v) => this.changeStep(i, step, () => (record[f.key] = v))),
         );
         return;
       case "dropdown":
@@ -638,7 +661,7 @@ export class ActionEditModal extends Modal {
           for (const o of f.options ?? []) d.addOption(o.value, o.label);
           d.setDisabled(reason !== undefined)
             .setValue(String(record[f.key] ?? ""))
-            .onChange((v) => (record[f.key] = v));
+            .onChange((v) => this.changeStep(i, step, () => (record[f.key] = v)));
         });
         return;
       case "model":
@@ -666,7 +689,7 @@ export class ActionEditModal extends Modal {
       case "block": {
         const multiline = f.kind === "block";
         if (multiline) setting.settingEl.addClass("is-stacked");
-        this.pillField(setting.controlEl, setting.nameEl, i, { value: String(record[f.key] ?? ""), multiline, mono: f.mono, placeholder: f.placeholder }, (v) => {
+        this.pillField(setting.controlEl, setting.nameEl, { value: String(record[f.key] ?? ""), multiline, mono: f.mono, placeholder: f.placeholder }, (v) => {
           record[f.key] = v;
           edited();
         });
@@ -675,11 +698,11 @@ export class ActionEditModal extends Modal {
     }
   }
 
-  // A templated field of step i: its pills, the {{ picker, and a place in the In band's insert target.
+  // A templated field of the selected step: its pills, the {{ picker, and a place in the In band's
+  // insert target.
   private pillField(
     parent: HTMLElement,
     toolsParent: HTMLElement,
-    i: number,
     look: { value: string; multiline: boolean; mono?: boolean; placeholder?: string },
     onChange: (value: string) => void,
   ): void {
@@ -687,13 +710,13 @@ export class ActionEditModal extends Modal {
       ...look,
       toolsParent,
       resolve: (name) => {
-        const input = availableInputs(this.steps, i).find((a) => a.name === name);
+        const input = this.paneInputs.find((a) => a.name === name);
         return input ? { type: input.type, maybe: input.maybe } : null;
       },
       onChange,
       onFocus: () => (this.tracker.current = field),
     });
-    attachVarPicker(this.app, field, () => this.pickerItems(i, new Set(availableInputs(this.steps, i).map((a) => a.name))));
+    attachVarPicker(this.app, field, () => this.pickerItems(this.selected));
     this.tracker.register(field);
   }
 
@@ -709,33 +732,28 @@ export class ActionEditModal extends Modal {
         setting.settingEl.addClass("is-warning");
         setting.setDesc("This model was renamed or deleted. Pick one, or the step stops the action.");
       }
-      d.setValue(step.model).onChange((v) => {
-        const changed = this.changeOutputs(i, step, () => {
+      d.setValue(step.model).onChange((v) =>
+        this.changeStep(i, step, () => {
           step.model = v;
           Object.assign(step, withoutUnavailable(step, this.models));
-        });
-        if (!changed) {
-          this.renderRail();
-          this.renderPane();
-        }
-      });
+        }),
+      );
     });
   }
 
-  // Makes a change to step i that can add or remove outputs. An added output gets a name nothing
-  // else produces, and a removed one that later steps use raises a notice. Redraws and returns true
-  // when the outputs changed.
-  private changeOutputs(i: number, step: Step, change: () => void): boolean {
+  // Every change to step i other than typed text goes through here, since it can add or remove
+  // outputs or change which fields show. An added output gets a name nothing else produces, while
+  // the names the step already had stay as they are. A removed one that later steps use raises a
+  // notice. Then the rail and the pane are redrawn.
+  private changeStep(i: number, step: Step, change: () => void): void {
     const before = outputsOf(step).map((o) => o.name);
     change();
-    if (outputsOf(step).length > before.length) freshOutputs(step, producedNames(this.steps.filter((s) => s !== step)));
+    if (outputsOf(step).length > before.length) freshOutputs(step, producedNames(this.steps.filter((s) => s !== step)).filter((n) => !before.includes(n)));
     const after = outputsOf(step).map((o) => o.name);
     const lost = before.filter((name) => !after.includes(name) && consumersOf(this.steps, i, name).length > 0);
     if (lost.length) new Notice(lostSource(lost));
-    if (before.join() === after.join()) return false;
     this.renderRail();
     this.renderPane();
-    return true;
   }
 
   // The reorderable option list of a Choice step.
@@ -786,19 +804,16 @@ export class ActionEditModal extends Modal {
         .addOption("one", "One value")
         .addOption("several", "Several values")
         .setValue(several ? "several" : "one")
-        .onChange((v) => {
-          if (v === "several") {
-            step.outputs = [{ name: step.variable, desc: "", choices: [] }];
-          } else {
-            const kept = step.outputs.find((o) => o.name === step.variable) ? step.variable : (step.outputs[0]?.name ?? step.variable);
-            const lost = step.outputs.filter((o) => o.name !== kept && consumersOf(this.steps, i, o.name).length > 0);
-            step.variable = kept;
-            step.outputs = [];
-            if (lost.length) new Notice(lostSource(lost.map((o) => o.name)));
-          }
-          this.renderRail();
-          this.renderPane();
-        }),
+        .onChange((v) =>
+          this.changeStep(i, step, () => {
+            if (v === "several") {
+              step.outputs = [{ name: step.variable, desc: "", choices: [] }];
+            } else {
+              step.variable = step.outputs.find((o) => o.name === step.variable) ? step.variable : (step.outputs[0]?.name ?? step.variable);
+              step.outputs = [];
+            }
+          }),
+        ),
     );
     if (!several) return;
     setting.settingEl.addClass("is-stacked", "is-outputs");
@@ -818,28 +833,19 @@ export class ActionEditModal extends Modal {
       choices.value = out.choices.join(", ");
       choices.addEventListener("input", () => (out.choices = choices.value.split(",").map((c) => c.trim()).filter((c) => c !== "")));
       if (step.outputs.length > 1) {
-        iconButton(row, "x", "Remove", () => {
-          const used = consumersOf(this.steps, i, out.name).length > 0;
-          step.outputs.splice(k, 1);
-          if (used) new Notice(lostSource([out.name]));
-          this.renderRail();
-          this.renderPane();
-        });
+        iconButton(row, "x", "Remove", () => this.changeStep(i, step, () => step.outputs.splice(k, 1)));
       }
     });
-    textButton(list.createDiv(), "plus", "Add value", () => {
-      step.outputs.push({ name: uniqueName("value", producedNames(this.steps)), desc: "", choices: [] });
-      this.renderRail();
-      this.renderPane();
-    });
+    textButton(list.createDiv(), "plus", "Add value", () => this.changeStep(i, step, () => step.outputs.push({ name: "value", desc: "", choices: [] })));
   }
 
   // Everything the picker can offer at step i: available inputs, then later outputs greyed out.
-  private pickerItems(i: number, available: Set<string>): VarItem[] {
+  private pickerItems(i: number): VarItem[] {
     const items: VarItem[] = [];
     const vars = this.run ? this.varsBefore(i) : {};
     const numbers = stepNumbers(this.steps);
-    for (const input of availableInputs(this.steps, i)) {
+    const available = new Set(this.paneInputs.map((a) => a.name));
+    for (const input of this.paneInputs) {
       if (input.from < 0) continue;
       items.push({
         name: input.name,
@@ -885,9 +891,9 @@ export class ActionEditModal extends Modal {
     const vars = this.varsBefore(i);
     const opts = resolveOptions(this.app, this.steps);
     const label = (text: string) => pane.createDiv({ cls: "quick-actions-result-label", text });
-    const marked = (template: string, cls = "", mode: ResolveMode = "plain") => {
+    const marked = (template: string, cls = "", mode: ResolveMode = "plain", values = vars) => {
       const box = pane.createDiv(`quick-actions-result ${cls}`.trim());
-      for (const seg of resolveSegments(template, vars, opts, mode)) {
+      for (const seg of resolveSegments(template, values, opts, mode)) {
         if (seg.name) box.createEl("mark", { text: seg.text });
         else box.appendText(seg.text);
       }
@@ -939,7 +945,7 @@ export class ActionEditModal extends Modal {
         renderPill(l, out.name, out.type);
         pane.createDiv({ cls: "quick-actions-result is-output", text: out.value || "(empty)" });
       }
-    } else if (result.note && step.type !== "quick_task") {
+    } else if (result.note && step.type !== "quick_task" && step.type !== "open_file") {
       muted(result.note);
     }
 
@@ -947,11 +953,10 @@ export class ActionEditModal extends Modal {
     const nextIndex = isLast && this.run ? this.run.next : i + 1;
     const next = this.steps[nextIndex];
     const nextPreview = next ? STEP_DEFS[next.type].preview : undefined;
-    if (next && nextPreview) {
+    const nextField = next && nextPreview ? templatedFields(next).find((f) => f.key === nextPreview.key) : undefined;
+    if (nextPreview && nextField) {
       label("Next step");
-      const template = (next as unknown as Record<string, string>)[nextPreview.key];
-      const mode = STEP_DEFS[next.type].fields.find((f) => f.key === nextPreview.key)?.resolve;
-      marked(template, "is-muted", mode).prepend(createSpan({ text: `${nextPreview.verb} ` }));
+      marked(nextField.value, "is-muted", nextField.mode, this.varsBefore(nextIndex)).prepend(createSpan({ text: `${nextPreview.verb} ` }));
     }
 
     const actions = pane.createDiv("quick-actions-run-actions");
@@ -980,7 +985,7 @@ export class ActionEditModal extends Modal {
   // ---- Test run ----
 
   // Runs on a copy of the draft, so editing during a model call can't change the steps it runs.
-  // When the steps changed meanwhile, the results are dropped.
+  // When a structural change happened meanwhile, the results are dropped.
   private async runTo(end: number, from = 0): Promise<void> {
     if (this.running) return;
     this.running = true;
@@ -1100,18 +1105,15 @@ export class ActionEditModal extends Modal {
     showRowMenu(at, {
       extra,
       index: i,
-      count: this.steps.length - (end - i), // a block moves down past the step after its end
+      count: this.steps.length - (end - i), // a block counts as one row, and Move down takes it past the step after its end
       onMove: (to) => this.moveStep(i, to > i ? end + 1 : to),
       onDelete: () => this.deleteStep(i),
     });
   }
 
-  // The converted step keeps an output name it may share: any name when it becomes a Set a value,
-  // and otherwise one a Set a value or a step in another branch also produces.
+  // The converted step keeps an output name it may share with the other steps that produce it.
   private changeType(i: number, type: StepType): void {
-    const taken =
-      type === "set_value" ? [] : this.steps.flatMap((s, j) => (j === i || s.type === "set_value" || exclusive(this.steps, i, j) ? [] : outputsOf(s).map((o) => o.name)));
-    this.steps[i] = convertStep(this.steps[i], type, taken);
+    this.steps[i] = convertStep(this.steps[i], type, takenNames(this.steps, i, type));
     this.clearRun();
     this.refreshAll();
   }

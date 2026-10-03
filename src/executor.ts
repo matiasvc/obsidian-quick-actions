@@ -1,19 +1,18 @@
-import { App, MarkdownView, Notice, TFile, TFolder, getLinkpath } from "obsidian";
-import { Action, ModelConfig, OutputType, Page, Step } from "./types";
-import { STEP_DEFS, modelOf, outputsOf, stepLabel, usesWeb, withoutUnavailable } from "./steps";
-import { ResolveOptions, cleanedInPaths, namesUsedBy, resolveStep } from "./variables";
+import { App, MarkdownView, Notice, TFile, TFolder, getLinkpath, moment } from "obsidian";
+import { Action, InsertInSectionStep, ModelConfig, OpenIn, OutputType, Page, Step } from "./types";
+import { STEP_DEFS, modelOf, outputsOf, stepLabel, usesWeb } from "./steps";
+import { BuiltinName, ResolveOptions, cleanedInPaths, namesUsedBy, resolveStep } from "./variables";
 import { findUrl, notePath, pathToLink, sourceList } from "./text";
 import { InsertPreview, Splice, applySplice, findHeadingLine, findInsertSpot, findInserted, insertContext, insertEdit } from "./insert";
 import { Block, blocksOf, branchEnd, isMarker, skipMarkers, stepCount, stepNumbers, testPasses } from "./flow";
-import { Attachment, REQUEST_LIMIT, apiKeyFor, askModel, askModelStructured, mediaTypeOf, providerLabel } from "./llm";
+import { Attachment, apiKeyFor, askModel, askModelStructured } from "./llm";
+import { REQUEST_LIMIT, mediaTypeOf, providerLabel } from "./providers";
 import { fetchPage } from "./fetch";
 import { findQuickTasks } from "./quicktasks";
 import { openChoiceModal, openFilePickerModal, openPromptModal } from "./modals";
 import { rememberAction, rememberFile } from "./recent";
 import { RunProgress, StepEvent } from "./progress";
-import { NoticeLink, UNDO_NOTICE_MS, linkNotice } from "./ui";
-
-declare const window: Window & { moment: typeof import("moment") };
+import { NoticeLink, UNDO_NOTICE_MS, errorMessage, linkNotice } from "./ui";
 
 export interface RunOptions {
   write: boolean; // false for a dry run, where prompts, fetches and models run and nothing is written
@@ -73,13 +72,13 @@ export function resolveOptions(app: App, steps: Step[]): ResolveOptions {
 // Runs the step pipeline. Returns the captured vars so a later run can continue from them. An If
 // block runs one of its branches and skips the rest, and a Stop step ends the run.
 export async function runAction(app: App, action: Action, models: ModelConfig[], opts: RunOptions): Promise<RunResult> {
-  const preset = opts.preset ?? {};
   const steps = action.steps;
-  // A continued run already holds the built-ins its first part read.
-  const vars = opts.vars ? { ...preset, ...opts.vars } : { ...(await builtinVars(app, namesUsedBy(steps))), ...preset };
+  // A continued run already holds the built-ins its first part read. URI values reach the run only
+  // through the steps they answer, in presetOutputs.
+  const vars = opts.vars ? { ...opts.vars } : await builtinVars(app, namesUsedBy(steps));
   const from = opts.from ?? 0;
   const to = Math.min(opts.to ?? steps.length, steps.length);
-  const ctx: StepContext = { app, action, models, opts, vars, resolve: resolveOptions(app, steps) };
+  const ctx: StepContext = { app, action, models, opts, vars, resolve: resolveOptions(app, steps), writer: opts.write ? vaultWriter(app) : testRunWriter(app) };
   const blocks = blocksOf(steps);
   const numbers = stepNumbers(steps);
   const results: StepResult[] = [];
@@ -117,7 +116,7 @@ export async function runAction(app: App, action: Action, models: ModelConfig[],
     try {
       result = await executeStep(ctx, step, i);
     } catch (e) {
-      result = failed(e instanceof Error ? e.message : String(e));
+      result = failed(errorMessage(e));
     }
     result.index = i;
     result.ms = Date.now() - stepStart;
@@ -259,7 +258,7 @@ function undoLink(app: App, writes: Write[]): NoticeLink {
     click: () => {
       undoWrites(app, writes).then(
         (missed) => new Notice(missed.length ? `Undone, except ${missed.join(", ")}, which changed since` : "Undone"),
-        (e: unknown) => new Notice(`Couldn't undo: ${e instanceof Error ? e.message : String(e)}`),
+        (e: unknown) => new Notice(`Couldn't undo: ${errorMessage(e)}`),
       );
     },
   };
@@ -285,28 +284,33 @@ export async function undoWrites(app: App, writes: Write[]): Promise<string[]> {
 }
 
 // Date and time always. The selection and the active note are read as the run starts, before any
-// prompt takes the focus. The clipboard is only read when a step uses it.
+// prompt takes the focus. The clipboard is only read when a step uses it, and is otherwise left
+// unset.
 export async function builtinVars(app: App, used: Set<string>): Promise<Record<string, string>> {
-  const now = window.moment();
-  const vars: Record<string, string> = {
+  const now = moment();
+  const recent = app.workspace.getMostRecentLeaf()?.view;
+  const view = app.workspace.getActiveViewOfType(MarkdownView) ?? (recent instanceof MarkdownView ? recent : null);
+  const file = view?.file ?? app.workspace.getActiveFile();
+  const values: Record<BuiltinName, string | undefined> = {
     date: now.format("YYYY-MM-DD"),
     time: now.format("HH:mm"),
     timestamp: now.format("YYYYMMDDHHmmss"),
+    selection: view?.editor.getSelection() ?? "",
+    active_note: file?.path ?? "",
+    active_title: file?.basename ?? "",
+    clipboard: used.has("clipboard") ? await readClipboard() : undefined,
   };
-  const recent = app.workspace.getMostRecentLeaf()?.view;
-  const view = app.workspace.getActiveViewOfType(MarkdownView) ?? (recent instanceof MarkdownView ? recent : null);
-  vars.selection = view?.editor.getSelection() ?? "";
-  const file = view?.file ?? app.workspace.getActiveFile();
-  vars.active_note = file?.path ?? "";
-  vars.active_title = file?.basename ?? "";
-  if (used.has("clipboard")) {
-    try {
-      vars.clipboard = await navigator.clipboard.readText();
-    } catch {
-      vars.clipboard = "";
-    }
-  }
+  const vars: Record<string, string> = {};
+  for (const [name, value] of Object.entries(values)) if (value !== undefined) vars[name] = value;
   return vars;
+}
+
+async function readClipboard(): Promise<string> {
+  try {
+    return await navigator.clipboard.readText();
+  } catch {
+    return "";
+  }
 }
 
 function ok(resolved: Record<string, string> = {}): StepResult {
@@ -359,28 +363,87 @@ async function spliceNote(app: App, file: TFile, plan: (text: string) => Splice 
   return changed;
 }
 
-// The missing folders above `path`, top first. Created unless this is a dry run.
-async function ensureFolders(app: App, path: string, write: boolean): Promise<string[]> {
+// The missing folders above `path`, top first.
+function missingFolders(app: App, path: string): string[] {
   const parts = path.split("/").slice(0, -1);
-  const created: string[] = [];
+  const missing: string[] = [];
   for (let n = 1; n <= parts.length; n++) {
     const folder = parts.slice(0, n).join("/");
     const existing = app.vault.getAbstractFileByPath(folder);
     if (existing instanceof TFolder) continue;
     if (existing) throw new Error(`${folder} is a file, not a folder`);
-    if (write) await app.vault.createFolder(folder);
-    created.push(folder);
+    missing.push(folder);
   }
-  return created;
+  return missing;
 }
 
-// Creates a note and the folders above it, or in a dry run says what it would create.
-async function createNote(app: App, path: string, content: string, write: boolean): Promise<{ note: string; writes: Write[] }> {
-  const folders = await ensureFolders(app, path, write);
-  const inFolder = folders.length ? ` in a new folder, ${folders[folders.length - 1]}` : "";
-  if (!write) return { note: `Would create ${path}${inFolder}`, writes: [] };
-  await app.vault.create(path, content);
-  return { note: `Created ${path}${inFolder}`, writes: [...folders.map((f): Write => ({ kind: "folder", path: f })), { kind: "create", path }] };
+function inNewFolder(folders: string[]): string {
+  return folders.length ? ` in a new folder, ${folders[folders.length - 1]}` : "";
+}
+
+// What a change did, or in a test run would do, and how Undo takes it back.
+interface Written {
+  note?: string;
+  writes: Write[];
+  preview?: InsertPreview;
+}
+
+// Every change a step makes to the vault or the workspace goes through one of these. A test run
+// gets one that runs the same checks and planning, changes nothing and says what it would do, so
+// no step has to remember that a test run writes nothing. A failed check throws.
+interface Writer {
+  create(path: string, content: string): Promise<Written>; // with the folders above it
+  insert(file: TFile, section: string, position: InsertInSectionStep["position"], text: string): Promise<Written>;
+  open(path: string, openIn: OpenIn, section: string): Promise<Written>; // with the cursor under `section`
+}
+
+function vaultWriter(app: App): Writer {
+  return {
+    async create(path, content) {
+      const folders = missingFolders(app, path);
+      for (const folder of folders) await app.vault.createFolder(folder);
+      await app.vault.create(path, content);
+      return { note: `Created ${path}${inNewFolder(folders)}`, writes: [...folders.map((f): Write => ({ kind: "folder", path: f })), { kind: "create", path }] };
+    },
+    async insert(file, section, position, text) {
+      let line = 0;
+      await spliceNote(app, file, (content) => {
+        const spot = findInsertSpot(content, section, position);
+        if ("error" in spot) throw new Error(`${spot.error} in ${file.path}`);
+        line = spot.at;
+        return insertEdit(spot, text);
+      });
+      return { note: `Added to ${file.path} under ${section}`, writes: [{ kind: "insert", path: file.path, text, line }] };
+    },
+    async open(path, openIn, section) {
+      const file = app.vault.getAbstractFileByPath(path);
+      if (!(file instanceof TFile)) throw new Error(`File not found: ${path}`);
+      const leaf = openIn === "tab" ? app.workspace.getLeaf("tab") : openIn === "split" ? app.workspace.getLeaf("split", "vertical") : app.workspace.getLeaf(false);
+      // Scroll to puts the cursor under a heading, which reading view has no place for.
+      await leaf.openFile(file, section ? { active: true, state: { mode: "source" } } : { active: true });
+      if (section && leaf.view instanceof MarkdownView) placeCursorUnder(leaf.view, section);
+      return { writes: [] };
+    },
+  };
+}
+
+function testRunWriter(app: App): Writer {
+  return {
+    async create(path) {
+      return { note: `Would create ${path}${inNewFolder(missingFolders(app, path))}`, writes: [] };
+    },
+    async insert(file, section, position, text) {
+      // Plan against the text a write would change: the open editor's, else the file's.
+      const content = openEditor(app, file.path)?.getValue() ?? (await app.vault.cachedRead(file));
+      const spot = findInsertSpot(content, section, position);
+      if ("error" in spot) throw new Error(`${spot.error} in ${file.path}`);
+      return { note: `Would insert at line ${spot.at + 1} of ${file.path}`, writes: [], preview: insertContext(spot, text) };
+    },
+    // The file may be one an earlier step would create, so it need not exist yet.
+    async open(path) {
+      return { note: `Would open ${path}`, writes: [] };
+    },
+  };
 }
 
 function megabytes(bytes: number): string {
@@ -451,6 +514,7 @@ interface StepContext {
   opts: RunOptions;
   vars: Record<string, string>;
   resolve: ResolveOptions;
+  writer: Writer;
 }
 
 async function executeStep(ctx: StepContext, step: Step, i: number): Promise<StepResult> {
@@ -484,6 +548,7 @@ async function executeStep(ctx: StepContext, step: Step, i: number): Promise<Ste
       if ("error" in found) return failed(found.error);
       const qa = await found.api.askTask({ project: resolved.project || undefined, prefill: resolved.prefill || undefined });
       if (!qa) return cancelled();
+      // Quick Tasks writes the note itself, past the writer, so a test run stops before it.
       if (!write) {
         // A placeholder with the real shape, so later steps can preview "![[{{task}}]]".
         const result = produce(ok(resolved), vars, [{ name: step.variable, type: "file", value: `${found.api.folder}/T-new.md` }]);
@@ -504,12 +569,10 @@ async function executeStep(ctx: StepContext, step: Step, i: number): Promise<Ste
         apiKeyFor(app, config);
         attachments = await readAttachments(app, resolved.attach, config.provider);
       } catch (e) {
-        return failed(e instanceof Error ? e.message : String(e), resolved);
+        return failed(errorMessage(e), resolved);
       }
       try {
-        // A value its model can't take, left from another model, is not sent.
-        const usable = withoutUnavailable(step, models);
-        const ask = { webSearch: usable.webSearch, webFetch: usable.webFetch, effort: usable.effort, attachments };
+        const ask = { webSearch: step.webSearch, webFetch: step.webFetch, effort: step.effort, attachments };
         let values: Output[];
         let pages: Page[];
         if (step.outputs.length > 0) {
@@ -527,7 +590,7 @@ async function executeStep(ctx: StepContext, step: Step, i: number): Promise<Ste
         if (attachments.length) result.note = `Attached ${attachments.map((a) => a.name).join(", ")}`;
         return result;
       } catch (e) {
-        return failed(`${config.name}: ${e instanceof Error ? e.message : String(e)}`, resolved);
+        return failed(`${config.name}: ${errorMessage(e)}`, resolved);
       }
     }
     case "fetch_page": {
@@ -553,7 +616,7 @@ async function executeStep(ctx: StepContext, step: Step, i: number): Promise<Ste
           { name: step.titleVariable, type: "text", value: page.title },
         ]);
       } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
+        const message = errorMessage(e);
         if (step.noUrl === "fail") return failed(`${url}: ${message}`, resolved);
         return asText(`Couldn't fetch ${url} (${message}), so the text was used as the page`);
       }
@@ -574,54 +637,21 @@ async function executeStep(ctx: StepContext, step: Step, i: number): Promise<Ste
         result.note = `File already exists: ${resolved.path}`;
         return result;
       }
-      const created = await createNote(app, resolved.path, resolved.content, write);
-      result.note = created.note;
-      result.writes = created.writes;
-      return result;
+      return Object.assign(result, await ctx.writer.create(resolved.path, resolved.content));
     }
     case "insert_in_section":
       return insertStep(ctx, step, resolved);
-    case "open_file": {
-      if (!write) return { ...ok(resolved), status: "skipped", note: "Not run" };
-      const file = app.vault.getAbstractFileByPath(resolved.target);
-      if (!(file instanceof TFile)) return failed(`File not found: ${resolved.target}`, resolved);
-      const leaf = step.openIn === "tab" ? app.workspace.getLeaf("tab") : step.openIn === "split" ? app.workspace.getLeaf("split", "vertical") : app.workspace.getLeaf(false);
-      await leaf.openFile(file, { active: true });
-      if (resolved.section && leaf.view instanceof MarkdownView) placeCursorUnder(leaf.view, resolved.section);
-      return ok(resolved);
-    }
+    case "open_file":
+      return Object.assign(ok(resolved), await ctx.writer.open(resolved.target, step.openIn, resolved.section));
   }
 }
 
 async function insertStep(ctx: StepContext, step: Extract<Step, { type: "insert_in_section" }>, resolved: Record<string, string>): Promise<StepResult> {
   const { app } = ctx;
-  const write = ctx.opts.write;
   const { target, section, format, templatePath } = resolved;
   const existing = app.vault.getAbstractFileByPath(target);
   if (existing && !(existing instanceof TFile)) return failed(`Not a file: ${target}`, resolved);
-
-  if (existing instanceof TFile) {
-    // Plan against the text the write will change: the open editor's, else the file's.
-    const content = openEditor(app, existing.path)?.getValue() ?? (await app.vault.cachedRead(existing));
-    const spot = findInsertSpot(content, section, step.position);
-    if ("error" in spot) return failed(`${spot.error} in ${target}`, resolved);
-    const result = ok(resolved);
-    result.preview = insertContext(spot, format);
-    if (!write) {
-      result.note = `Would insert at line ${spot.at + 1} of ${target}`;
-      return result;
-    }
-    let line = spot.at;
-    await spliceNote(app, existing, (text) => {
-      const current = findInsertSpot(text, section, step.position);
-      if ("error" in current) throw new Error(`${current.error} in ${target}`);
-      line = current.at;
-      return insertEdit(current, format);
-    });
-    result.writes = [{ kind: "insert", path: target, text: format, line }];
-    result.note = `Added to ${target} under ${section}`;
-    return result;
-  }
+  if (existing instanceof TFile) return Object.assign(ok(resolved), await ctx.writer.insert(existing, section, step.position, format));
 
   if (!step.createIfMissing) return failed(`File not found: ${target}`, resolved);
   let initial = section + "\n";
@@ -634,17 +664,14 @@ async function insertStep(ctx: StepContext, step: Extract<Step, { type: "insert_
   if ("error" in spot) return failed(`${spot.error} in the template`, resolved);
   const result = ok(resolved);
   result.preview = insertContext(spot, format);
-  const created = await createNote(app, target, applySplice(initial, insertEdit(spot, format)), write);
-  result.note = created.note;
-  result.writes = created.writes;
-  return result;
+  return Object.assign(result, await ctx.writer.create(target, applySplice(initial, insertEdit(spot, format))));
 }
 
 // Puts the cursor on the line under a heading, found in the editor's own text so a note created a
 // moment ago works before the metadata cache has read it.
 function placeCursorUnder(view: MarkdownView, section: string): void {
   const editor = view.editor;
-  const line = findHeadingLine(editor.getValue().split("\n"), section, true);
+  const line = findHeadingLine(editor.getValue().split("\n"), section);
   if (line === -1) return;
   const target = Math.min(line + 1, editor.lastLine());
   editor.setCursor({ line: target, ch: 0 });

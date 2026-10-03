@@ -1,11 +1,11 @@
-// The only file that knows about the Quick Tasks plugin. Nothing is imported from it: the
+// The only file that knows about the Quick Tasks plugin. Nothing is imported from it. The
 // contract is the api object on its plugin instance, mirrored here and checked by version.
 import type { App } from "obsidian";
 
 export const QUICK_TASKS_API_VERSION = 3;
 
-// What the quick-add box parsed. Opaque apart from the title: handed back to createTask and
-// summary untouched, so Quick Tasks alone knows its fields.
+// What the quick-add box parsed. Opaque apart from the title. It goes back to createTask and
+// summary untouched, so only Quick Tasks knows its fields.
 export interface QuickTaskDraft {
   title: string;
 }
@@ -25,7 +25,7 @@ interface AppWithPlugins {
   plugins?: { plugins?: Record<string, { api?: Partial<QuickTasksApi> } | undefined> };
 }
 
-// Looked up on every call: the plugin can be enabled or disabled while Obsidian runs, and
+// Looked up on every call, since the plugin can be enabled or disabled while Obsidian runs and
 // Obsidian drops the entry while it is disabled.
 export function findQuickTasks(app: App): { api: QuickTasksApi } | { error: string } {
   const api = (app as unknown as AppWithPlugins).plugins?.plugins?.["quick-tasks"]?.api;
@@ -33,7 +33,7 @@ export function findQuickTasks(app: App): { api: QuickTasksApi } | { error: stri
     return { error: "Quick Tasks plugin is not enabled" };
   }
   if (api.version !== QUICK_TASKS_API_VERSION) {
-    return { error: `Quick Tasks API version ${String(api.version)}, this plugin expects ${QUICK_TASKS_API_VERSION}` };
+    return { error: `Quick Tasks has API version ${String(api.version)}, but this plugin expects ${QUICK_TASKS_API_VERSION}` };
   }
   return { api: api as QuickTasksApi };
 }

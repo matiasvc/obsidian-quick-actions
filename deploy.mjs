@@ -17,5 +17,5 @@ console.log(`Installed ${id} into ${dest}`);
 
 if (process.argv.includes("--no-reload")) process.exit(0);
 const reload = spawnSync("obsidian", [`plugin:reload`, `id=${id}`], { encoding: "utf8" });
-if (reload.error) console.log("Obsidian CLI not found, reload it yourself");
+if (reload.error) console.log("Obsidian CLI not found. Reload the plugin yourself.");
 else console.log((reload.stdout || reload.stderr).trim().split("\n").pop());

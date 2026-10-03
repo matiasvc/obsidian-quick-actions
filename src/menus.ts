@@ -16,7 +16,7 @@ export interface MenuEntry {
   click?: () => void;
 }
 
-// A two-line title: Obsidian has no description API, so the title is a fragment.
+// A two-line title. Menu items have no description API, so the title is a fragment.
 // `is-accent` on the wrapper lets CSS tint the sibling icon via :has().
 export function entryFragment(entry: MenuEntry): DocumentFragment {
   const fragment = new DocumentFragment();
