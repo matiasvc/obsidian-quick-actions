@@ -1,6 +1,6 @@
 import { App, requestUrl } from "obsidian";
 import { Effort, LLMOutput, ModelConfig, Page } from "./types";
-import { DEFAULT_MAX_TOKENS, WEB_MAX_USES, providerLabel, unsupported } from "./providers";
+import { DEFAULT_MAX_TOKENS, WEB_MAX_USES, keyProblem, providerLabel, unsupported } from "./providers";
 import { stripCitations } from "./text";
 
 interface ApiError {
@@ -9,10 +9,9 @@ interface ApiError {
 
 // The model's API key from this device's Keychain. Throws with what to fix when it is missing.
 export function apiKeyFor(app: App, config: ModelConfig): string {
-  if (!config.secret_id) throw new Error(`No API key picked for ${config.name || "this model"}`);
-  const key = app.secretStorage.getSecret(config.secret_id);
-  if (!key) throw new Error(`This device's Keychain has no secret named "${config.secret_id}"`);
-  return key;
+  const problem = keyProblem(app, config);
+  if (problem) throw new Error(problem);
+  return app.secretStorage.getSecret(config.secret_id) ?? "";
 }
 
 // A GET, or a POST when there is a body, to the provider's API. Throws with the provider's error

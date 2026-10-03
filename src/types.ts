@@ -192,6 +192,11 @@ export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
 }
 
+// The action's command, without the plugin's id in front. By id, so a rename keeps its hotkeys.
+export function actionCommandId(action: Action): string {
+  return `action-${action.id}`;
+}
+
 export function makeAction(name: string, steps: Step[] = []): Action {
   return { id: generateId(), name, steps, icon: DEFAULT_ACTION_ICON };
 }

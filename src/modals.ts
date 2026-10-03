@@ -2,6 +2,7 @@ import { App, FuzzyMatch, FuzzySuggestModal, Keymap, Modal, Platform, TFile, get
 import { Action, FileKind } from "./types";
 import { actionUses, loadDraft, recentFiles, saveDraft } from "./recent";
 import { mediaTypeOf } from "./providers";
+import { usedLabel } from "./ui";
 
 export interface PromptOptions {
   title: string; // the action's name
@@ -171,14 +172,6 @@ export function openFilePickerModal(app: App, folder: string, label: string, rec
   const files = all.filter((f) => f.path.startsWith(prefix));
   if (files.length === 0) return Promise.resolve(undefined);
   return new Promise((resolve) => new FilePickerModal(app, files, label, recentKey, (file) => resolve(file ? file.path : null)).open());
-}
-
-// "used today", "used yesterday" or "used 4 Sep", for when an action last ran.
-function usedLabel(at: number): string {
-  const m = moment(at);
-  if (m.isSame(moment(), "day")) return "used today";
-  if (m.isSame(moment().subtract(1, "day"), "day")) return "used yesterday";
-  return `used ${m.format("D MMM")}`;
 }
 
 // The launcher: every action, the most recently run first.

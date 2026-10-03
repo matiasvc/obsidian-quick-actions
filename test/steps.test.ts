@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { App } from "obsidian";
-import { ModelConfig, Step } from "../src/types";
+import { Action, ModelConfig, Step } from "../src/types";
 import {
   STEP_DEFS,
   STEP_TYPES_IN_ORDER,
@@ -10,6 +10,7 @@ import {
   freshOutputs,
   isModelMissing,
   makeStep,
+  modelUses,
   outputHintOf,
   outputsOf,
   setOutputName,
@@ -145,13 +146,31 @@ test("a step naming a model that is gone is marked, never swapped for the first 
   assert.equal(stepTitle(llm, models), "Opus 4.6");
 });
 
-test("a step that can't run says why: a missing model or a missing plugin", () => {
-  const app = {} as App;
-  assert.equal(blockedReason(stepWith("llm", { model: "Opus 4.6" }), { app, models }), 'Model "Opus 4.6" is not configured');
+test("a step that can't run says why: a missing model, model ID, key or plugin", () => {
+  const app = { secretStorage: { getSecret: (id: string) => (id === "key" ? "sk-1" : null) } } as unknown as App;
+  const ready = [{ ...models[0], secret_id: "key" }];
+  assert.equal(blockedReason(stepWith("llm", { model: "Opus 4.6" }), { app, models: ready }), 'Model "Opus 4.6" is not configured');
   assert.equal(blockedReason(stepWith("llm"), { app, models: [] }), "No models are configured");
-  assert.equal(blockedReason(stepWith("llm"), { app, models }), undefined);
+  assert.equal(blockedReason(stepWith("llm"), { app, models: ready }), undefined);
+  assert.equal(blockedReason(stepWith("llm"), { app, models: [{ ...ready[0], model: "" }] }), "No model ID");
+  assert.equal(blockedReason(stepWith("llm"), { app, models }), "No API key picked");
+  assert.equal(blockedReason(stepWith("llm"), { app, models: [{ ...ready[0], secret_id: "other" }] }), `This device's Keychain has no secret named "other"`);
   assert.equal(blockedReason(stepWith("quick_task"), { app, models }), "Quick Tasks plugin is not enabled");
   assert.equal(blockedReason(stepWith("prompt"), { app, models }), undefined);
+});
+
+test("modelUses: named steps count for their model, unnamed ones for the first, numbered as in the rail", () => {
+  const opus = models[0];
+  const haiku: ModelConfig = { ...opus, name: "Haiku" };
+  const steps: Step[] = [stepWith("if"), stepWith("llm", { model: "Haiku" }), stepWith("end_if"), stepWith("llm"), stepWith("llm", { model: "Opus" })];
+  const action: Action = { id: "a", name: "A", icon: "zap", steps };
+  const uses = (list: ModelConfig[], model: ModelConfig) => modelUses([action], list, model).map((u) => u.number);
+  assert.deepEqual(uses([opus, haiku], opus), [3, 4]);
+  assert.deepEqual(uses([opus, haiku], haiku), [2]);
+  // A new model added when there are none takes the unnamed steps.
+  const fresh: ModelConfig = { name: "", provider: "anthropic", model: "", secret_id: "" };
+  assert.deepEqual(uses([fresh], fresh), [3]);
+  assert.deepEqual(uses([opus, fresh], fresh), []);
 });
 
 test("freshOutputs makes every output name unique, against others and each other", () => {

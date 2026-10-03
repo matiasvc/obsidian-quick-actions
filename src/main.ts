@@ -1,5 +1,5 @@
 import { Notice, Plugin } from "obsidian";
-import { Action, BranchTest, DEFAULT_ACTION_ICON, LLMOutput, QuickActionsSettings, Step, toSlug } from "./types";
+import { Action, BranchTest, DEFAULT_ACTION_ICON, LLMOutput, QuickActionsSettings, Step, actionCommandId, toSlug } from "./types";
 import { STEP_DEFS, newTest, stepWith } from "./steps";
 import { repairBlocks } from "./flow";
 import { executeAction } from "./executor";
@@ -96,7 +96,7 @@ export default class QuickActionsPlugin extends Plugin {
     this.ribbonButtons = [];
 
     for (const action of this.settings.actions) {
-      const commandID = `action-${action.id}`;
+      const commandID = actionCommandId(action);
       this.addCommand({ id: commandID, name: action.name, icon: action.icon, callback: () => this.run(action) });
       this.registeredCommandIds.push(commandID);
       if (action.ribbon) this.ribbonButtons.push({ title: action.name, el: this.addRibbonIcon(action.icon, action.name, () => this.run(action)) });

@@ -1,6 +1,21 @@
 // What the plugin knows about each model provider: its name, the limits of one request, and the
-// step options its API takes. No obsidian import, so the step table and the node tests can use it.
+// step options its API takes. Only a type import from obsidian, so the step table and the node tests
+// can use it.
+import type { App } from "obsidian";
 import { ModelConfig } from "./types";
+
+// Why the model has no usable API key on this device, or undefined when it has one. The key itself
+// lives in this device's Keychain.
+export function keyProblem(app: App, config: ModelConfig): string | undefined {
+  if (!config.secret_id) return "No API key picked";
+  if (!app.secretStorage.getSecret(config.secret_id)) return `This device's Keychain has no secret named "${config.secret_id}"`;
+  return undefined;
+}
+
+// Why a step can't run on this model on this device, or undefined when it can.
+export function modelProblem(app: App, config: ModelConfig): string | undefined {
+  return config.model ? keyProblem(app, config) : "No model ID";
+}
 
 export const PROVIDERS: { value: ModelConfig["provider"]; label: string }[] = [
   { value: "anthropic", label: "Anthropic" },

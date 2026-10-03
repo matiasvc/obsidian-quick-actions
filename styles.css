@@ -127,31 +127,12 @@ body:not(.is-phone) .modal.quick-actions-prompt.mod-form {
   color: var(--text-error);
   font-size: var(--font-ui-smaller);
 }
-.quick-actions-ok {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--size-2-2);
-  font-size: var(--font-ui-smaller);
-  color: var(--color-green);
-  --icon-size: 14px;
-  --icon-stroke: 2.5px;
-}
 .quick-actions-spacer {
   flex: 1;
 }
 .quick-actions-mono {
   font-family: var(--font-monospace);
   font-size: var(--font-smaller);
-}
-.quick-actions-var {
-  font-family: var(--font-monospace);
-  font-size: var(--font-smaller);
-  color: var(--text-muted);
-  background: var(--background-primary-alt);
-  padding: 0 var(--size-2-2);
-  border-radius: var(--radius-s);
-  border: 1px solid var(--background-modifier-border);
-  white-space: nowrap;
 }
 
 /* ---- Pills ---- */
@@ -383,28 +364,106 @@ div.quick-actions-field-editor {
   box-shadow: 0 2px 0 0 var(--interactive-accent);
 }
 
-/* ---- Settings page ---- */
-.quick-actions-row.setting-item {
-  align-items: center;
-  padding: var(--size-4-2) var(--size-4-3);
-  margin-bottom: var(--size-2-2);
+/* ---- Settings page: Obsidian's list groups, an action's steps on one line ---- */
+/* The whole row opens its editor. Specific enough to beat the transparent background Obsidian
+   gives rows inside a group. */
+@media (hover: hover) {
+  .setting-group .setting-item.quick-actions-row:hover {
+    background-color: var(--background-modifier-hover);
+  }
 }
-.quick-actions-row .setting-item-description {
-  padding-top: 0;
+.quick-actions-row .is-llm {
+  color: var(--text-accent);
 }
-.quick-actions-row + .setting-item-heading {
-  margin-top: var(--size-4-4);
+.quick-actions-meta {
+  margin-inline-start: var(--size-4-1);
 }
-.quick-actions-row .setting-item-control {
-  --icon-size: var(--icon-s);
+.quick-actions-flow {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.quick-actions-chain {
+.quick-actions-flow .is-if {
+  color: var(--color-orange);
+}
+.quick-actions-flow .is-error {
+  color: var(--text-error);
+}
+.quick-actions-flow-sep {
+  color: var(--text-faint);
+  padding-inline: 3px;
+}
+.quick-actions-count {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* Set hotkey and an unset ribbon button show on hover or focus, and not at all without hover, as
+   on a phone. */
+.quick-actions-row .quick-actions-hover-only {
+  opacity: 0;
+}
+.quick-actions-row:hover .quick-actions-hover-only,
+.quick-actions-row:focus-within .quick-actions-hover-only {
+  opacity: 1;
+}
+@media (hover: none) {
+  .quick-actions-row .quick-actions-hover-only {
+    display: none;
+  }
+}
+/* A settings row's grip sits in its start padding and shows on hover. */
+.is-reorderable .quick-actions-row .quick-actions-grip {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: var(--size-4-4);
+  justify-content: center;
+  margin: 0;
+  opacity: 0;
+}
+.is-reorderable .quick-actions-row:hover .quick-actions-grip {
+  opacity: 1;
+}
+.quick-actions-empty-row {
+  display: flex;
+  gap: var(--size-4-2);
+  flex-wrap: wrap;
+  margin-top: var(--size-4-3);
+}
+
+/* ---- Model editor: the action editor's head over a step-style card ---- */
+.modal.quick-actions-model-editor {
+  --dialog-width: 640px;
+}
+.quick-actions-model-editor .modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3);
+}
+.quick-actions-model-editor .quick-actions-action-icon {
+  display: flex;
+  padding: var(--size-2-2);
+  color: var(--text-accent);
+}
+body:not(.is-phone) .quick-actions-model-editor .quick-actions-editor-head input.quick-actions-name {
+  width: 300px;
+}
+.quick-actions-model-message:empty {
+  display: none;
+}
+/* The content's gap already spaces Obsidian's button row. */
+.quick-actions-model-editor .modal-button-container {
+  margin-top: 0;
+}
+.quick-actions-used {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--size-2-2);
-  margin-top: var(--size-2-1);
+  gap: var(--size-2-3);
 }
+/* An action named in the Used by band. */
 .quick-actions-chip {
   display: inline-flex;
   align-items: center;
@@ -418,68 +477,6 @@ div.quick-actions-field-editor {
   --icon-size: 12px;
   --icon-stroke: 2px;
   white-space: nowrap;
-}
-.quick-actions-chip.is-llm {
-  color: var(--text-accent);
-  background: hsla(var(--color-accent-hsl), 0.14);
-}
-.quick-actions-chip.is-error {
-  color: var(--color-red);
-  background: rgba(var(--color-red-rgb), 0.12);
-}
-.quick-actions-chip.is-add {
-  background: transparent;
-  border: 1px dashed var(--background-modifier-border-hover);
-  color: var(--text-faint);
-}
-.quick-actions-arrow {
-  display: inline-flex;
-  color: var(--text-faint);
-  --icon-size: 12px;
-  --icon-stroke: 2px;
-}
-.quick-actions-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--size-4-2);
-  padding: var(--size-4-6) var(--size-4-5);
-  border: 1px dashed var(--background-modifier-border-hover);
-  border-radius: var(--radius-l);
-  margin-bottom: var(--size-4-4);
-}
-.quick-actions-empty.is-compact {
-  padding-block: var(--size-4-4);
-}
-.quick-actions-empty-title {
-  font-size: var(--font-ui-medium);
-  font-weight: var(--font-medium);
-}
-.quick-actions-empty-text {
-  font-size: var(--font-ui-small);
-  color: var(--text-muted);
-  max-width: 520px;
-}
-.quick-actions-empty-row {
-  display: flex;
-  gap: var(--size-4-2);
-  flex-wrap: wrap;
-  margin-top: var(--size-4-1);
-}
-.quick-actions-empty-row:empty {
-  display: none;
-}
-
-/* ---- Plain form modals (model editor) ---- */
-/* Fixed widths everywhere but phones. On phones Obsidian stacks the row and makes the input full width. */
-body:not(.is-phone) .quick-actions-form .setting-item-control input[type="text"] {
-  width: 220px;
-}
-/* On top of Obsidian's .modal-button-container, whose phone rules win over these. */
-.quick-actions-form-footer {
-  margin-top: var(--size-4-2);
-  padding-top: var(--size-4-3);
-  border-top: 1px solid var(--background-modifier-border);
 }
 
 /* ---- Action editor ---- */
@@ -814,7 +811,7 @@ body:not(.is-phone) .quick-actions-form .setting-item-control input[type="text"]
   justify-content: stretch;
   margin-top: var(--size-2-2);
 }
-body:not(.is-phone) .quick-actions-card-body .setting-item-control input[type="text"] {
+body:not(.is-phone) .quick-actions-card-body .setting-item-control input:is([type="text"], [type="number"]) {
   width: 300px;
 }
 body:not(.is-phone) .quick-actions-card-body .setting-item:not(.is-stacked) .quick-actions-field {
@@ -1011,26 +1008,4 @@ body:not(.is-phone) .quick-actions-back {
 .is-phone .quick-actions-pane-head input.quick-actions-step-name {
   order: 10;
   flex: 1 1 100%;
-}
-
-/* Phones: an action row is one line of name and menu over its steps. Tapping it edits, and
-   Move up or down in the menu reorders, since dragging needs a mouse. */
-.is-phone .quick-actions-row.setting-item {
-  position: relative;
-  padding-inline-end: 48px;
-}
-.is-phone .quick-actions-row .setting-item-control {
-  position: absolute;
-  top: var(--size-4-2);
-  inset-inline: var(--size-4-2);
-  justify-content: flex-end;
-  margin: 0;
-  padding: 0;
-  pointer-events: none;
-}
-.is-phone .quick-actions-row .setting-item-control > * {
-  pointer-events: auto;
-}
-.is-phone .quick-actions-row .quick-actions-edit-button {
-  display: none;
 }

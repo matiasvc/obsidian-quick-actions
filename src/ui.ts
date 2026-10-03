@@ -1,8 +1,8 @@
-import { App, Notice, setIcon } from "obsidian";
+import { App, Notice, moment, setIcon } from "obsidian";
 import { Action, ModelConfig, OutputType, Step } from "./types";
-import { STEP_DEFS, StepEnv, blockedReason, stepTitle } from "./steps";
+import { StepEnv, blockedReason, stepTitle } from "./steps";
 import { BUILTINS, InputInfo } from "./variables";
-import { isMarker } from "./flow";
+import { blocksOf } from "./flow";
 import type { PillField } from "./pillfield";
 
 // Small DOM helpers shared by the settings tab and the editors.
@@ -10,14 +10,6 @@ import type { PillField } from "./pillfield";
 export function iconEl(parent: HTMLElement, name: string, cls?: string): HTMLElement {
   const el = parent.createSpan({ cls: cls ? `quick-actions-icon ${cls}` : "quick-actions-icon" });
   setIcon(el, name);
-  return el;
-}
-
-// An icon followed by text.
-export function labelEl(parent: HTMLElement, cls: string, icon: string, text: string): HTMLElement {
-  const el = parent.createSpan({ cls });
-  iconEl(el, icon);
-  el.appendText(text);
   return el;
 }
 
@@ -108,22 +100,31 @@ export class FieldFocusTracker {
   }
 }
 
-// The step chain shown on an action row: chips joined by chevrons.
-export function chainEl(parent: HTMLElement, steps: Step[], env: StepEnv): HTMLElement {
-  const chain = parent.createDiv("quick-actions-chain");
-  // An If block shows as its If chip. Its branches' steps follow in order.
-  steps.filter((step) => !isMarker(step)).forEach((step, i) => {
-    if (i > 0) iconEl(chain, "chevron-right", "quick-actions-arrow");
-    const chip = labelEl(chain, "quick-actions-chip", STEP_DEFS[step.type].icon, stepTitle(step, env.models));
-    if (step.type === "llm") chip.addClass("is-llm");
-    const blocked = blockedReason(step, env);
+// The steps on an action row as one line of titles. An If block collapses to its branch count,
+// since its branches don't run in a line. A step that can't run, or a block holding one, is marked
+// with the reason as its tooltip.
+export function flowEl(parent: HTMLElement, steps: Step[], env: StepEnv): HTMLElement {
+  const flow = parent.createDiv("quick-actions-flow");
+  if (steps.length === 0) {
+    flow.setText("No steps yet");
+    return flow;
+  }
+  const blocks = blocksOf(steps);
+  for (let i = 0; i < steps.length; i++) {
+    if (i > 0) flow.createSpan({ cls: "quick-actions-flow-sep", text: "›" });
+    const block = blocks.get(i);
+    const span = block ? steps.slice(i, block.end + 1) : [steps[i]];
+    const el = block
+      ? flow.createSpan({ cls: "is-if", text: `If (${plural(block.branches.length, "branch", "branches")})` })
+      : flow.createSpan({ cls: steps[i].type === "llm" ? "is-llm" : undefined, text: stepTitle(steps[i], env.models) });
+    const blocked = span.map((s) => blockedReason(s, env)).find((r) => r);
     if (blocked) {
-      chip.addClass("is-error");
-      chip.setAttr("aria-label", blocked);
+      el.addClass("is-error");
+      el.setAttr("aria-label", blocked);
     }
-  });
-  if (steps.length === 0) chain.createSpan({ cls: "quick-actions-chip is-add", text: "No steps" });
-  return chain;
+    if (block) i = block.end;
+  }
+  return flow;
 }
 
 export const UNDO_NOTICE_MS = 10000;
@@ -162,14 +163,6 @@ export function linkNotice(lines: string[], links: NoticeLink[], duration?: numb
   return notice;
 }
 
-// Returns the row for buttons under the text.
-export function emptyEl(parent: HTMLElement, title: string | null, text: string): HTMLElement {
-  const el = parent.createDiv(title ? "quick-actions-empty" : "quick-actions-empty is-compact");
-  if (title) el.createDiv({ cls: "quick-actions-empty-title", text: title });
-  el.createDiv({ cls: "quick-actions-empty-text", text });
-  return el.createDiv("quick-actions-empty-row");
-}
-
 // By id, which survives a rename. The handler still accepts the name's slug for older links.
 export function actionUri(app: App, action: Action): string {
   return `obsidian://quick-actions?vault=${encodeURIComponent(app.vault.getName())}&run=${encodeURIComponent(action.id)}`;
@@ -179,6 +172,14 @@ export function copyUri(app: App, action: Action): void {
   void navigator.clipboard.writeText(actionUri(app, action));
   // eslint-disable-next-line obsidianmd/ui/sentence-case -- URI is an acronym
   new Notice("URI copied to clipboard");
+}
+
+// "used today", "used yesterday" or "used 4 Sep", for when an action last ran.
+export function usedLabel(at: number): string {
+  const m = moment(at);
+  if (m.isSame(moment(), "day")) return "used today";
+  if (m.isSame(moment().subtract(1, "day"), "day")) return "used yesterday";
+  return `used ${m.format("D MMM")}`;
 }
 
 export function formatSeconds(ms: number): string {

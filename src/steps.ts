@@ -1,10 +1,10 @@
 // The step table: the one place that knows what each step type is, what it
 // produces, and which fields it edits.
 import type { App } from "obsidian";
-import { BranchTest, LLMStep, ModelConfig, OutputType, Step, StepType } from "./types";
+import { Action, BranchTest, LLMStep, ModelConfig, OutputType, Step, StepType } from "./types";
 import { soleRef, uniqueName } from "./variables";
-import { TEST_OPS } from "./flow";
-import { Feature, WEB_MAX_USES, unsupported } from "./providers";
+import { TEST_OPS, stepNumbers } from "./flow";
+import { Feature, WEB_MAX_USES, modelProblem, unsupported } from "./providers";
 import { findQuickTasks } from "./quicktasks";
 
 export type StepGroup = "ask" | "generate" | "do" | "flow";
@@ -135,7 +135,12 @@ export const STEP_DEFS: Record<StepType, StepDef> = {
     outputHint: "the reply",
     cleanInPath: true,
     fromUri: false,
-    blocked: (step, { models }) => (isModelMissing(step, models) ? (step.model ? `Model "${step.model}" is not configured` : "No models are configured") : undefined),
+    blocked: (step, { app, models }) => {
+      if (step.type !== "llm") return undefined;
+      const config = modelOf(step, models);
+      if (!config) return step.model ? `Model "${step.model}" is not configured` : "No models are configured";
+      return modelProblem(app, config);
+    },
     fields: [
       { key: "model", label: "Model", kind: "model" },
       {
@@ -497,8 +502,8 @@ export function templatedFields(step: Step): TemplatedField[] {
   return result;
 }
 
-// A branch's tests in a few words, as the rail and the step chain show them: "page_title has
-// text", plus "and 1 more" or "or 1 more" when there are several.
+// A branch's tests in a few words, as the rail shows them: "page_title has text", plus "and 1
+// more" or "or 1 more" when there are several.
 export function testsSummary(tests: BranchTest[], match: "all" | "any"): string {
   const first = tests[0];
   if (!first || !first.value.trim()) return "…";
@@ -538,6 +543,22 @@ function unsupportedBy(feature: Feature): NonNullable<FieldDef["unavailable"]> {
   };
 }
 
+// A model step that runs on a given model, with its action and its step number in that action.
+export interface ModelUse {
+  action: Action;
+  step: LLMStep;
+  number: number;
+}
+
+// Every model step that runs on `model` when the models are `models`. A step that names no model
+// runs on the first one.
+export function modelUses(actions: Action[], models: ModelConfig[], model: ModelConfig): ModelUse[] {
+  return actions.flatMap((action) => {
+    const numbers = stepNumbers(action.steps);
+    return action.steps.flatMap((step, i) => (step.type === "llm" && modelOf(step, models) === model ? [{ action, step, number: numbers[i] }] : []));
+  });
+}
+
 export function isModelMissing(step: Step, models: ModelConfig[]): step is LLMStep {
   return step.type === "llm" && modelOf(step, models) === null;
 }
@@ -553,8 +574,8 @@ export function blockedReason(step: Step, env: StepEnv): string | undefined {
   return STEP_DEFS[step.type].blocked?.(step, env);
 }
 
-// A step's title in the rail and the step chain: its name, else its model, its first test
-// for a branch, or its verb.
+// A step's title in the rail and on an action's settings row: its name, else its model, its
+// first test for a branch, or its verb.
 export function stepTitle(step: Step, models: ModelConfig[]): string {
   if (step.name?.trim()) return step.name.trim();
   if (step.type === "llm") return modelOf(step, models)?.name ?? (step.model || "Ask a model");

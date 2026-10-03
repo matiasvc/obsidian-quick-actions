@@ -42,10 +42,12 @@ export function addEntries(menu: Menu, entries: MenuEntry[]): Menu {
   return menu;
 }
 
-// Shows a menu below an element, or at the mouse when given an event.
+// Shows a menu below an element, or at the mouse when given an event. A click in another window,
+// such as the settings popout, makes an event of that window, which instanceof misses, so the
+// event is told apart by a property elements lack.
 export function showMenu(entries: MenuEntry[], at: MouseEvent | HTMLElement): Menu {
   const menu = addEntries(new Menu(), entries);
-  if (at instanceof MouseEvent) {
+  if ("clientX" in at) {
     menu.showAtMouseEvent(at);
   } else {
     const rect = at.getBoundingClientRect();
